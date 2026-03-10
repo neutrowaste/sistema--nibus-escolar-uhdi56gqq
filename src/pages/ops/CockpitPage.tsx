@@ -15,10 +15,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
-import { Activity, AlertTriangle, Download, MapPin } from 'lucide-react'
+import { Activity, Download, MapPin } from 'lucide-react'
 import { useOfflineSync } from '@/contexts/OfflineSyncContext'
 import { useNotifications } from '@/contexts/NotificationContext'
 import { toast } from 'sonner'
+import { api } from '@/lib/api'
 
 export default function CockpitPage() {
   const [telemetry, setTelemetry] = useState({ lat: 100, lng: 100, speed: 45, battery: 89 })
@@ -28,7 +29,7 @@ export default function CockpitPage() {
   const isOnlineRef = useRef(isOnline)
   const enqueueTelemetryRef = useRef(enqueueTelemetry)
   const addNotificationRef = useRef(addNotification)
-  const lastAlertRef = useRef({ outOfBounds: 0, speeding: 0 })
+  const lastAlertRef = useRef({ outOfBounds: 0, speeding: 0, approaching: 0 })
 
   useEffect(() => {
     isOnlineRef.current = isOnline
@@ -61,12 +62,27 @@ export default function CockpitPage() {
         // Geofencing Check: center 300,200 radius 180
         const dist = Math.sqrt(Math.pow(nextLng - 300, 2) + Math.pow(nextLat - 200, 2))
 
+        // Trigger 'Approaching Point' external notification
+        if (p > 0.78 && p < 0.82 && now - lastAlertRef.current.approaching > 60000) {
+          api.notifications.sendExternal(
+            'bus_approaching',
+            `O ônibus da Rota Norte - Manhã está se aproximando do seu ponto de parada.`,
+            'r1',
+          )
+          lastAlertRef.current.approaching = now
+        }
+
         if (dist > 180 && now - lastAlertRef.current.outOfBounds > 20000) {
           addNotificationRef.current({
             title: 'Alerta de Geofence: Desvio de Rota',
             message: `Veículo ABC-1234 cruzou a fronteira da zona segura.`,
             type: 'warning',
           })
+          api.notifications.sendExternal(
+            'geofence_breach',
+            `Alerta de Segurança: Veículo ABC-1234 saiu da zona segura configurada.`,
+            'r1',
+          )
           lastAlertRef.current.outOfBounds = now
         }
 
@@ -77,6 +93,11 @@ export default function CockpitPage() {
             message: `Veículo ABC-1234 registrou ${nextSpeed.toFixed(0)}km/h. Limite definido: 60km/h.`,
             type: 'alert',
           })
+          api.notifications.sendExternal(
+            'speeding',
+            `Aviso: Veículo ABC-1234 registrou ${nextSpeed.toFixed(0)}km/h, acima do limite permitido de 60km/h.`,
+            'r1',
+          )
           lastAlertRef.current.speeding = now
         }
 
