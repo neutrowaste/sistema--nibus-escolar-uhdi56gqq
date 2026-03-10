@@ -14,10 +14,12 @@ import Index from './pages/Index'
 import UsersPage from './pages/iam/UsersPage'
 import RolesPage from './pages/iam/RolesPage'
 import StudentsPage from './pages/iam/StudentsPage'
+import DriversPage from './pages/iam/DriversPage'
 import VehiclesPage from './pages/fleet/VehiclesPage'
 import MaintenancePage from './pages/fleet/MaintenancePage'
 import RoutesPage from './pages/ops/RoutesPage'
 import CockpitPage from './pages/ops/CockpitPage'
+import PerformancePage from './pages/ops/PerformancePage'
 import BiometricsPage from './pages/ops/BiometricsPage'
 import NotificationsPage from './pages/settings/NotificationsPage'
 import ParentsPortalPage from './pages/parents/ParentsPortalPage'
@@ -41,10 +43,12 @@ const App = () => (
                   <Route path="/iam/users" element={<UsersPage />} />
                   <Route path="/iam/roles" element={<RolesPage />} />
                   <Route path="/iam/students" element={<StudentsPage />} />
+                  <Route path="/iam/drivers" element={<DriversPage />} />
                   <Route path="/fleet/vehicles" element={<VehiclesPage />} />
                   <Route path="/fleet/maintenance" element={<MaintenancePage />} />
                   <Route path="/ops/routes" element={<RoutesPage />} />
                   <Route path="/ops/cockpit" element={<CockpitPage />} />
+                  <Route path="/ops/performance" element={<PerformancePage />} />
                   <Route path="/ops/biometrics" element={<BiometricsPage />} />
                   <Route path="/settings/notifications" element={<NotificationsPage />} />
                 </Route>

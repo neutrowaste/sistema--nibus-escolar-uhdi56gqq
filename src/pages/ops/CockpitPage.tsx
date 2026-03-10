@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
-import { Activity, Download, MapPin, Layers } from 'lucide-react'
+import { Activity, Download, MapPin, Layers, Filter } from 'lucide-react'
 import { useOfflineSync } from '@/contexts/OfflineSyncContext'
 import { useNotifications } from '@/contexts/NotificationContext'
 import { toast } from 'sonner'
@@ -25,6 +25,10 @@ export default function CockpitPage() {
   const [telemetry, setTelemetry] = useState({ lat: 100, lng: 100, speed: 45, battery: 89 })
   const { isOnline, enqueueTelemetry } = useOfflineSync()
   const { addNotification } = useNotifications()
+
+  // Advanced Map Filters State
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [periodFilter, setPeriodFilter] = useState('all')
 
   const isOnlineRef = useRef(isOnline)
   const enqueueTelemetryRef = useRef(enqueueTelemetry)
@@ -89,6 +93,16 @@ export default function CockpitPage() {
     setTimeout(() => toast.success(`Arquivo gerado.`), 1200)
   }
 
+  const showActiveVehicle =
+    (statusFilter === 'all' || statusFilter === 'on_time') &&
+    (periodFilter === 'all' || periodFilter === 'morning')
+  const showDelayedVehicle =
+    (statusFilter === 'all' || statusFilter === 'alert') &&
+    (periodFilter === 'all' || periodFilter === 'morning')
+  const showMaintenanceVehicle =
+    (statusFilter === 'all' || statusFilter === 'maintenance') &&
+    (periodFilter === 'all' || periodFilter === 'afternoon')
+
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col lg:flex-row space-y-4 lg:space-y-0 lg:space-x-4 animate-fade-in">
       <div className="flex-1 flex flex-col space-y-4">
@@ -96,19 +110,36 @@ export default function CockpitPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Cockpit Operacional</h1>
             <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <MapPin className="h-4 w-4" /> Integração OpenStreetMap & Tracking
+              <MapPin className="h-4 w-4" /> Integração de Tracking e Filtros Avançados
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Select defaultValue="all">
-              <SelectTrigger className="w-[180px] bg-white">
-                <SelectValue placeholder="Filtrar por Rota" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as Rotas</SelectItem>
-                <SelectItem value="r1">Rota Norte - Manhã</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex bg-white border rounded-md shadow-sm p-1">
+              <Filter className="h-4 w-4 text-slate-400 mx-2 my-auto" />
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[140px] border-0 focus:ring-0 h-8 text-xs bg-transparent">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Qualquer Status</SelectItem>
+                  <SelectItem value="on_time">No Horário</SelectItem>
+                  <SelectItem value="alert">Alerta / Atraso</SelectItem>
+                  <SelectItem value="maintenance">Manutenção</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="w-px h-6 bg-slate-200 my-auto"></div>
+              <Select value={periodFilter} onValueChange={setPeriodFilter}>
+                <SelectTrigger className="w-[140px] border-0 focus:ring-0 h-8 text-xs bg-transparent">
+                  <SelectValue placeholder="Período" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Qualquer Período</SelectItem>
+                  <SelectItem value="morning">Manhã</SelectItem>
+                  <SelectItem value="afternoon">Tarde</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="bg-white">
@@ -124,15 +155,10 @@ export default function CockpitPage() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <Badge variant="outline" className="bg-white px-3 py-1.5 shadow-sm">
-              <span className="flex h-2 w-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>1
-              Online
-            </Badge>
           </div>
         </div>
 
         <Card className="flex-1 relative overflow-hidden bg-slate-100 border-2 border-slate-200 shadow-inner rounded-xl group">
-          {/* Interactive OpenStreetMap Integration */}
           <iframe
             className="absolute inset-0 w-full h-full pointer-events-auto transition-all duration-700"
             src="https://www.openstreetmap.org/export/embed.html?bbox=-46.75,-23.65,-46.50,-23.45&amp;layer=mapnik"
@@ -140,7 +166,6 @@ export default function CockpitPage() {
             title="OpenStreetMap View"
           />
 
-          {/* SVG Overlay for Telemetry Routes & Geofences */}
           <svg
             className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-md"
             xmlns="http://www.w3.org/2000/svg"
@@ -164,40 +189,49 @@ export default function CockpitPage() {
               strokeDasharray="8 8"
               className="opacity-70"
             />
-            <path
-              d={`M 100 100 L ${telemetry.lng} ${telemetry.lat}`}
-              fill="none"
-              stroke="#3b82f6"
-              strokeWidth="6"
-              strokeLinecap="round"
-            />
+            {showActiveVehicle && (
+              <path
+                d={`M 100 100 L ${telemetry.lng} ${telemetry.lat}`}
+                fill="none"
+                stroke="#3b82f6"
+                strokeWidth="6"
+                strokeLinecap="round"
+              />
+            )}
 
             <circle cx="250" cy="200" r="10" fill="#10b981" stroke="#fff" strokeWidth="3" />
             <circle cx="600" cy="350" r="10" fill="#3b82f6" stroke="#fff" strokeWidth="3" />
-            <circle
-              cx="350"
-              cy="150"
-              r="10"
-              fill="#ef4444"
-              stroke="#fff"
-              strokeWidth="3"
-              className="animate-pulse"
-            />
+
+            {/* Mocked vehicles based on filters */}
+            {showDelayedVehicle && (
+              <circle
+                cx="350"
+                cy="150"
+                r="10"
+                fill="#ef4444"
+                stroke="#fff"
+                strokeWidth="3"
+                className="animate-pulse"
+              />
+            )}
+            {showMaintenanceVehicle && (
+              <circle cx="500" cy="250" r="10" fill="#f59e0b" stroke="#fff" strokeWidth="3" />
+            )}
           </svg>
 
-          {/* Real-time Tracking Marker */}
-          <div
-            className="absolute pointer-events-none transition-all duration-300 ease-linear"
-            style={{ top: telemetry.lat - 16, left: telemetry.lng - 16 }}
-          >
-            <div className="h-8 w-8 bg-blue-600 rounded-full border-4 border-white shadow-[0_0_15px_rgba(59,130,246,0.8)] flex items-center justify-center relative z-10">
-              <div className="h-2 w-2 bg-white rounded-full animate-pulse"></div>
+          {showActiveVehicle && (
+            <div
+              className="absolute pointer-events-none transition-all duration-300 ease-linear"
+              style={{ top: telemetry.lat - 16, left: telemetry.lng - 16 }}
+            >
+              <div className="h-8 w-8 bg-blue-600 rounded-full border-4 border-white shadow-[0_0_15px_rgba(59,130,246,0.8)] flex items-center justify-center relative z-10">
+                <div className="h-2 w-2 bg-white rounded-full animate-pulse"></div>
+              </div>
+              <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap border border-slate-700 font-medium">
+                ABC-1234
+              </div>
             </div>
-            <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap border border-slate-700 font-medium">
-              ABC-1234
-            </div>
-            <div className="absolute inset-0 bg-blue-500 rounded-full animate-ping opacity-30"></div>
-          </div>
+          )}
 
           <div className="absolute top-4 right-4 bg-white/95 backdrop-blur shadow-sm p-2 rounded-lg border flex gap-2 pointer-events-auto">
             <Button variant="secondary" size="sm" className="h-8 text-xs">
@@ -210,7 +244,7 @@ export default function CockpitPage() {
       <div className="w-full lg:w-80 flex flex-col gap-4">
         <Card className="p-5 flex-1 flex flex-col">
           <h3 className="font-semibold mb-5 flex items-center text-slate-800">
-            <Activity className="w-4 h-4 mr-2 text-blue-500" /> Gateway IoT & Telemetria
+            <Activity className="w-4 h-4 mr-2 text-blue-500" /> Veículo Focado
           </h3>
           <div className="space-y-6 flex-1">
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 shadow-sm">
@@ -223,36 +257,23 @@ export default function CockpitPage() {
                       : 'font-mono font-bold text-slate-700'
                   }
                 >
-                  {telemetry.speed.toFixed(0)} km/h
+                  {showActiveVehicle ? telemetry.speed.toFixed(0) : '0'} km/h
                 </span>
               </div>
               <div className="h-2.5 bg-slate-200 rounded-full overflow-hidden">
                 <div
                   className={`h-full transition-all duration-500 ${telemetry.speed > 60 ? 'bg-red-500' : 'bg-blue-500'}`}
-                  style={{ width: `${(telemetry.speed / 80) * 100}%` }}
-                ></div>
-              </div>
-            </div>
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 shadow-sm">
-              <div className="flex justify-between text-sm mb-2">
-                <span className="text-slate-500 font-medium">Energia (Gateway)</span>
-                <span className="font-mono font-bold text-slate-700">
-                  {telemetry.battery.toFixed(1)}%
-                </span>
-              </div>
-              <div className="h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-500 ${telemetry.battery > 20 ? 'bg-emerald-500' : 'bg-red-500'}`}
-                  style={{ width: `${telemetry.battery}%` }}
+                  style={{ width: showActiveVehicle ? `${(telemetry.speed / 80) * 100}%` : '0%' }}
                 ></div>
               </div>
             </div>
             <div className="pt-2">
               <div className="flex items-start gap-3 text-sm text-slate-700 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                <MapPin className="w-5 h-5 shrink-0 mt-0.5 text-blue-500" />
+                <Filter className="w-5 h-5 shrink-0 mt-0.5 text-blue-500" />
                 <span className="leading-relaxed">
-                  Controle de perímetro ativado. Notificações configuradas para desvios superiores a{' '}
-                  <strong className="text-slate-900">180 metros</strong> do eixo planejado.
+                  Filtros ativos. Visualizando{' '}
+                  <strong>{showActiveVehicle ? '1' : '0'} veículo(s)</strong> no mapa com base nos
+                  critérios de status e agendamento.
                 </span>
               </div>
             </div>

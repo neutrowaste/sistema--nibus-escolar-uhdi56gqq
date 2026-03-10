@@ -11,7 +11,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Wrench, Edit, Trash2, Calendar, Gauge } from 'lucide-react'
+import { Plus, Wrench, Edit, Trash2, Calendar, Gauge, FileDown } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -52,6 +52,34 @@ export default function MaintenancePage() {
     setIsDialogOpen(false)
   }
 
+  const handleExportReport = () => {
+    toast.info('Gerando relatório consolidado de manutenção...')
+
+    // Simulate automated reporting tool document generation
+    setTimeout(() => {
+      const reportContent =
+        'RELATÓRIO DE MANUTENÇÃO DA FROTA\nData: ' +
+        new Date().toLocaleDateString('pt-BR') +
+        '\n\n' +
+        tasks
+          .map((t) => {
+            const v = vehicles.find((vec) => vec.id === t.vehicleId)
+            return `- Veículo: ${v?.plate || 'Desconhecido'} | Serviço: ${t.type} | Status: ${t.status} | Limite: ${t.dueDate}`
+          })
+          .join('\n')
+
+      const blob = new Blob([reportContent], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `relatorio_manutencao_${new Date().getTime()}.txt`
+      a.click()
+      URL.revokeObjectURL(url)
+
+      toast.success('Relatório gerado e baixado com sucesso.')
+    }, 1000)
+  }
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Concluída':
@@ -72,54 +100,59 @@ export default function MaintenancePage() {
             Gestão preventiva e corretiva da frota. Controle baseado em Km ou Tempo.
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" /> Nova Manutenção
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Agendar Manutenção</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSave} className="space-y-4 mt-4">
-              <div className="space-y-2">
-                <Label>Veículo</Label>
-                <Select required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione um veículo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {vehicles.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>
-                        {v.plate} ({v.model})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Tipo de Serviço</Label>
-                <Input required placeholder="Ex: Troca de Óleo, Revisão de Freios" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handleExportReport}>
+            <FileDown className="mr-2 h-4 w-4" /> Baixar Relatório
+          </Button>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="mr-2 h-4 w-4" /> Nova Manutenção
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Agendar Manutenção</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleSave} className="space-y-4 mt-4">
                 <div className="space-y-2">
-                  <Label>Data Limite</Label>
-                  <Input type="date" required />
+                  <Label>Veículo</Label>
+                  <Select required>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione um veículo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {vehicles.map((v) => (
+                        <SelectItem key={v.id} value={v.id}>
+                          {v.plate} ({v.model})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Km Limite (Alerta)</Label>
-                  <Input type="number" placeholder="Ex: 50000" />
+                  <Label>Tipo de Serviço</Label>
+                  <Input required placeholder="Ex: Troca de Óleo, Revisão de Freios" />
                 </div>
-              </div>
-              <DialogFooter className="mt-6">
-                <Button type="submit" className="w-full">
-                  Salvar e Agendar
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Data Limite</Label>
+                    <Input type="date" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Km Limite (Alerta)</Label>
+                    <Input type="number" placeholder="Ex: 50000" />
+                  </div>
+                </div>
+                <DialogFooter className="mt-6">
+                  <Button type="submit" className="w-full">
+                    Salvar e Agendar
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       <Card>

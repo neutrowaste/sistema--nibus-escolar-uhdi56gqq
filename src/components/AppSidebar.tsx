@@ -1,5 +1,16 @@
 import { Link, useLocation } from 'react-router-dom'
-import { Home, Users, Shield, Bus, Map as MapIcon, Compass, ScanFace, Wrench } from 'lucide-react'
+import {
+  Home,
+  Users,
+  Shield,
+  Bus,
+  Map as MapIcon,
+  Compass,
+  ScanFace,
+  Wrench,
+  IdCard,
+  TrendingUp,
+} from 'lucide-react'
 import {
   Sidebar,
   SidebarContent,
@@ -15,11 +26,13 @@ import {
 const navItems = [
   { title: 'Dashboard', url: '/', icon: Home },
   { title: 'Usuários', url: '/iam/users', icon: Users },
+  { title: 'Motoristas', url: '/iam/drivers', icon: IdCard },
   { title: 'Perfis', url: '/iam/roles', icon: Shield },
   { title: 'Veículos', url: '/fleet/vehicles', icon: Bus },
   { title: 'Manutenção', url: '/fleet/maintenance', icon: Wrench },
   { title: 'Rotas', url: '/ops/routes', icon: MapIcon },
   { title: 'Cockpit', url: '/ops/cockpit', icon: Compass },
+  { title: 'Desempenho', url: '/ops/performance', icon: TrendingUp },
   { title: 'Biometria', url: '/ops/biometrics', icon: ScanFace },
 ]
 

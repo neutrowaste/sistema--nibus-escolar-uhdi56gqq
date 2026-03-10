@@ -11,6 +11,14 @@ export interface User {
   role: string
   status: 'Ativo' | 'Inativo'
 }
+export interface Driver {
+  id: string
+  name: string
+  cnh: string
+  phone: string
+  vehicleId?: string
+  status: 'Ativo' | 'Férias' | 'Afastado'
+}
 export interface VehicleDocument {
   id: string
   title: string
@@ -69,6 +77,25 @@ export interface NotificationLog {
   status: 'Sent' | 'Failed' | 'Pending'
 }
 
+let mockDrivers: Driver[] = [
+  {
+    id: 'd1',
+    name: 'João Mendes',
+    cnh: '12345678901',
+    phone: '11999998888',
+    vehicleId: 'v1',
+    status: 'Ativo',
+  },
+  {
+    id: 'd2',
+    name: 'Miguel Costa',
+    cnh: '98765432109',
+    phone: '11988887777',
+    vehicleId: 'v2',
+    status: 'Ativo',
+  },
+]
+
 let mockVehicles: Vehicle[] = [
   {
     id: 'v1',
@@ -111,12 +138,51 @@ let mockRoutes: Route[] = [
   },
 ]
 
-let mockMaintenance: MaintenanceTask[] = []
+let mockMaintenance: MaintenanceTask[] = [
+  {
+    id: 'm1',
+    vehicleId: 'v1',
+    type: 'Troca de Óleo',
+    description: 'Revisão 10k',
+    status: 'Pendente',
+    dueDate: '2024-12-01',
+  },
+  {
+    id: 'm2',
+    vehicleId: 'v2',
+    type: 'Freios',
+    description: 'Pastilhas',
+    status: 'Concluída',
+    dueDate: '2023-10-15',
+  },
+]
 let mockStudents: Student[] = []
 let mockNotificationSettings: NotificationSetting[] = []
 let mockNotificationLogs: NotificationLog[] = []
 
 export const api = {
+  drivers: {
+    list: async () => {
+      await delay(300)
+      return [...mockDrivers]
+    },
+    add: async (d: Partial<Driver>) => {
+      await delay(300)
+      const newD = { id: Math.random().toString(), ...d } as Driver
+      mockDrivers.push(newD)
+      return newD
+    },
+    update: async (id: string, d: Partial<Driver>) => {
+      await delay(300)
+      mockDrivers = mockDrivers.map((item) => (item.id === id ? { ...item, ...d } : item))
+      return d
+    },
+    delete: async (id: string) => {
+      await delay(300)
+      mockDrivers = mockDrivers.filter((d) => d.id !== id)
+      return true
+    },
+  },
   vehicles: {
     list: async () => {
       await delay(400)
@@ -178,6 +244,26 @@ export const api = {
     getLogs: async () => [...mockNotificationLogs],
     sendExternal: (eventId: string, message: string, routeId?: string) => {
       auditLog('NOTIFY', eventId, { message, routeId })
+    },
+  },
+  performance: {
+    getMetrics: async () => {
+      await delay(300)
+      return {
+        occupancy: [
+          { route: 'Norte', rate: 92 },
+          { route: 'Sul', rate: 85 },
+          { route: 'Leste', rate: 98 },
+          { route: 'Oeste', rate: 76 },
+        ],
+        punctuality: [
+          { day: 'Seg', onTime: 95, delayed: 5 },
+          { day: 'Ter', onTime: 92, delayed: 8 },
+          { day: 'Qua', onTime: 98, delayed: 2 },
+          { day: 'Qui', onTime: 90, delayed: 10 },
+          { day: 'Sex', onTime: 88, delayed: 12 },
+        ],
+      }
     },
   },
 }
