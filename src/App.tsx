@@ -21,6 +21,7 @@ import CockpitPage from './pages/ops/CockpitPage'
 import BiometricsPage from './pages/ops/BiometricsPage'
 import NotificationsPage from './pages/settings/NotificationsPage'
 import ParentsPortalPage from './pages/parents/ParentsPortalPage'
+import CommercialSummary from './pages/CommercialSummary'
 import NotFound from './pages/NotFound'
 
 const App = () => (
@@ -48,6 +49,7 @@ const App = () => (
                   <Route path="/settings/notifications" element={<NotificationsPage />} />
                 </Route>
                 <Route path="/parents/portal" element={<ParentsPortalPage />} />
+                <Route path="/commercial-summary" element={<CommercialSummary />} />
               </Route>
 
               <Route path="*" element={<NotFound />} />

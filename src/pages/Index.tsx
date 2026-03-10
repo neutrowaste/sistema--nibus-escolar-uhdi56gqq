@@ -40,6 +40,10 @@ export default function Index() {
   }, [])
 
   const handleExport = (format: string) => {
+    if (format === 'COMMERCIAL_PDF') {
+      window.open('/commercial-summary', '_blank')
+      return
+    }
     toast.info(`Preparando relatório executivo (${format})...`)
     setTimeout(() => {
       toast.success(`Relatório baixado: dashboard_consolidado.${format.toLowerCase()}`)
@@ -95,15 +99,18 @@ export default function Index() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button>
-              <Download className="mr-2 h-4 w-4" /> Baixar Relatório
+              <Download className="mr-2 h-4 w-4" /> Exportar Relatórios
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => handleExport('COMMERCIAL_PDF')}>
+              <FileText className="mr-2 h-4 w-4 text-blue-600" /> Resumo Comercial (PDF)
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => handleExport('PDF')}>
-              Exportar como PDF
+              <Download className="mr-2 h-4 w-4" /> Exportar Dados (PDF)
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => handleExport('CSV')}>
-              Exportar como CSV
+              <Download className="mr-2 h-4 w-4" /> Exportar Dados (CSV)
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
