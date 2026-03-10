@@ -1,5 +1,7 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useState, ReactNode, useEffect } from 'react'
 import { toast } from 'sonner'
+
+export type AlertCategory = 'Traffic' | 'Maintenance' | 'Operational'
 
 export interface AppNotification {
   id: string
@@ -7,12 +9,14 @@ export interface AppNotification {
   message: string
   read: boolean
   createdAt: string
-  type: 'alert' | 'info' | 'warning'
+  category: AlertCategory
 }
 
 interface NotificationContextType {
   notifications: AppNotification[]
   unreadCount: number
+  soundSettings: Record<AlertCategory, boolean>
+  toggleSoundSetting: (cat: AlertCategory) => void
   markAsRead: (id: string) => void
   markAllAsRead: () => void
   addNotification: (n: Omit<AppNotification, 'id' | 'read' | 'createdAt'>) => void
@@ -23,30 +27,47 @@ const NotificationContext = createContext<NotificationContextType | null>(null)
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([
     {
-      id: '3',
-      title: 'Alerta de Manutenção',
-      message: 'Veículo XYZ-9876 atingiu 50.000km. Necessário agendar troca de óleo.',
+      id: '1',
+      title: 'Via Bloqueada',
+      message: 'Acidente na Av. Brasil. Rota Norte afetada.',
       read: false,
       createdAt: new Date().toISOString(),
-      type: 'warning',
-    },
-    {
-      id: '1',
-      title: 'Dispositivo Offline',
-      message: 'Gateway veicular ABC-1234 perdeu conexão de rede há 5 minutos.',
-      read: false,
-      createdAt: new Date(Date.now() - 300000).toISOString(),
-      type: 'warning',
+      category: 'Traffic',
     },
     {
       id: '2',
-      title: 'Desvio de Rota Crítico',
-      message: 'Veículo XYZ-9876 saiu da rota planejada.',
+      title: 'Manutenção Preventiva',
+      message: 'Veículo XYZ-9876 próximo de 10.000km.',
       read: true,
       createdAt: new Date(Date.now() - 3600000).toISOString(),
-      type: 'alert',
+      category: 'Maintenance',
     },
   ])
+
+  const [soundSettings, setSoundSettings] = useState<Record<AlertCategory, boolean>>({
+    Traffic: true,
+    Maintenance: false,
+    Operational: true,
+  })
+
+  const playAlertSound = () => {
+    // Attempt to play a subtle beep using web audio API or HTML5 Audio
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const osc = ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(880, ctx.currentTime)
+      osc.connect(ctx.destination)
+      osc.start()
+      osc.stop(ctx.currentTime + 0.1)
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  const toggleSoundSetting = (cat: AlertCategory) => {
+    setSoundSettings((prev) => ({ ...prev, [cat]: !prev[cat] }))
+  }
 
   const unreadCount = notifications.filter((n) => !n.read).length
 
@@ -66,12 +87,28 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       createdAt: new Date().toISOString(),
     }
     setNotifications((prev) => [newNotif, ...prev])
-    toast(newNotif.title, { description: newNotif.message })
+
+    if (soundSettings[n.category]) {
+      playAlertSound()
+    }
+
+    toast(newNotif.title, {
+      description: newNotif.message,
+      icon: n.category === 'Traffic' ? '🚦' : n.category === 'Maintenance' ? '🔧' : '⚙️',
+    })
   }
 
   return (
     <NotificationContext.Provider
-      value={{ notifications, unreadCount, markAsRead, markAllAsRead, addNotification }}
+      value={{
+        notifications,
+        unreadCount,
+        soundSettings,
+        toggleSoundSetting,
+        markAsRead,
+        markAllAsRead,
+        addNotification,
+      }}
     >
       {children}
     </NotificationContext.Provider>

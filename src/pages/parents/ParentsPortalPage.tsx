@@ -10,33 +10,31 @@ import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 export default function ParentsPortalPage() {
-  const { logout, user } = useAuth()
+  const { logout } = useAuth()
   const [telemetry, setTelemetry] = useState({ lat: 100, lng: 100 })
   const [arrivalAlertSent, setArrivalAlertSent] = useState(false)
+  const [progress, setProgress] = useState(0)
 
-  // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [msgText, setMsgText] = useState('')
 
   useEffect(() => {
-    // Fetch initial chat
     api.chat.getConversations().then((data) => {
       const parentConv = data.find((c) => c.id === 'c1')
       if (parentConv) setMessages(parentConv.messages)
     })
 
-    // GPS Telemetry sim
     let p = 0
     const interval = setInterval(() => {
       p += 0.005
       if (p > 1) p = 0
+      setProgress(p)
       setTelemetry({ lng: 100 + 300 * p, lat: 100 + 200 * p })
       if (p >= 0.8 && p < 0.85 && !arrivalAlertSent) {
         setArrivalAlertSent(true)
         toast.info('Notificação de Chegada!', {
-          description: 'O ônibus está próximo ao ponto de parada. Previsão: 5 minutos.',
+          description: 'O ônibus está próximo ao ponto de parada.',
           icon: <BellRing className="h-5 w-5 text-blue-500" />,
-          duration: 10000,
         })
       }
     }, 100)
@@ -50,6 +48,8 @@ export default function ParentsPortalPage() {
     setMessages((prev) => [...prev, newMsg])
     setMsgText('')
   }
+
+  const etaMinutes = Math.max(1, Math.floor((1 - progress) * 20))
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans animate-fade-in">
@@ -81,14 +81,16 @@ export default function ParentsPortalPage() {
               value="chat"
               className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
             >
-              <MessageSquare className="w-4 h-4 mr-2" /> Fale Conosco
+              <MessageSquare className="w-4 h-4 mr-2" /> Contato
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="map" className="space-y-5 mt-0 flex-1">
             <div>
-              <h2 className="text-xl font-semibold text-slate-900">Olá, Responsável</h2>
-              <p className="text-sm text-slate-500 mt-1">Acompanhe a viagem do seu dependente.</p>
+              <h2 className="text-xl font-semibold text-slate-900">Rota Designada: Rota Norte</h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Acompanhe a viagem do seu dependente ao vivo.
+              </p>
             </div>
             <Card className="overflow-hidden border-2 border-slate-200 shadow-sm">
               <div className="h-56 bg-slate-100 relative">
@@ -121,7 +123,7 @@ export default function ParentsPortalPage() {
                     fontWeight="bold"
                     textAnchor="middle"
                   >
-                    Sua Casa
+                    Sua Parada
                   </text>
                 </svg>
                 <div className="absolute top-3 right-3 bg-white/95 px-2.5 py-1.5 rounded-full shadow-sm text-xs font-semibold flex items-center gap-1.5 border">
@@ -129,15 +131,15 @@ export default function ParentsPortalPage() {
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
                   </span>
-                  Ao vivo
+                  GPS Ao vivo
                 </div>
               </div>
               <CardContent className="p-5 bg-white">
-                <div className="flex justify-between items-start mb-4">
+                <div className="flex justify-between items-start">
                   <div>
                     <h3 className="font-bold text-lg text-slate-900">Veículo ABC-1234</h3>
-                    <p className="text-sm text-slate-600 flex items-center gap-1.5 mt-1 font-medium">
-                      <Clock className="h-4 w-4 text-slate-400" /> Chegada est. 12:45 PM
+                    <p className="text-sm text-blue-600 flex items-center gap-1.5 mt-1 font-bold">
+                      <Clock className="h-4 w-4" /> Chegada est. em {etaMinutes} min
                     </p>
                   </div>
                   <div className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
@@ -176,7 +178,7 @@ export default function ParentsPortalPage() {
                       {new Date(m.timestamp).toLocaleTimeString([], {
                         hour: '2-digit',
                         minute: '2-digit',
-                      })}
+                      }) || 'Agora'}
                     </span>
                   </div>
                 ))}
@@ -184,7 +186,7 @@ export default function ParentsPortalPage() {
               <div className="p-3 bg-white border-t">
                 <form onSubmit={handleSend} className="flex gap-2">
                   <Input
-                    placeholder="Avisar ausência, atraso..."
+                    placeholder="Escreva uma mensagem..."
                     value={msgText}
                     onChange={(e) => setMsgText(e.target.value)}
                     className="flex-1 rounded-full"
