@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api, Vehicle } from '@/lib/api'
 import {
   Table,
@@ -11,7 +12,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Bus, Plus, Wrench, FileText, Settings2, Upload } from 'lucide-react'
+import { Plus, Wrench, FileText, Settings2, Upload } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Sheet,
@@ -68,8 +69,10 @@ export default function VehiclesPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
-            <Wrench className="mr-2 h-4 w-4" /> Manutenções
+          <Button variant="outline" asChild>
+            <Link to="/fleet/maintenance">
+              <Wrench className="mr-2 h-4 w-4" /> Manutenções
+            </Link>
           </Button>
           <Button>
             <Plus className="mr-2 h-4 w-4" /> Novo Veículo

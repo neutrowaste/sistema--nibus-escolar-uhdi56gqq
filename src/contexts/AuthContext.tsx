@@ -10,6 +10,7 @@ export type UserSession = {
   orgId: string
   branchId: string
   permissions: string[]
+  role?: string
 }
 
 interface AuthContextType {
@@ -29,29 +30,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, pass: string) => {
     setIsLoading(true)
     try {
-      // Simulating API call
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
       if (email && pass) {
         localStorage.setItem('orgId', 'org-8103')
         localStorage.setItem('branchId', 'br-001')
+
+        let userRole = 'admin'
+        let userName = 'Admin Global'
+        let perms = [
+          'page:iam',
+          'page:fleet',
+          'page:ops',
+          'action:edit',
+          'page:dashboard:executive',
+        ]
+        let redirectPath = '/'
+
+        if (email.includes('parent')) {
+          userRole = 'parent'
+          userName = 'Responsável (Familiar)'
+          perms = ['page:parents:portal']
+          redirectPath = '/parents/portal'
+        }
+
         setUser({
-          id: 'u-123',
-          name: 'Admin Global',
+          id: email.includes('parent') ? 'p-123' : 'u-123',
+          name: userName,
           email: email,
           avatar: 'https://img.usecurling.com/ppl/thumbnail?gender=female&seed=12',
           orgId: 'org-8103',
           branchId: 'br-001',
-          permissions: [
-            'page:iam',
-            'page:fleet',
-            'page:ops',
-            'action:edit',
-            'page:dashboard:executive',
-          ],
+          permissions: perms,
+          role: userRole,
         })
         toast.success('Login efetuado com sucesso!')
-        navigate('/')
+        navigate(redirectPath)
       } else {
         throw new Error('Credenciais inválidas')
       }

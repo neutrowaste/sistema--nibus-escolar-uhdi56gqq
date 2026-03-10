@@ -50,6 +50,16 @@ export interface Route {
   status: 'Agendada' | 'Em Andamento' | 'Concluída'
 }
 
+export interface MaintenanceTask {
+  id: string
+  vehicleId: string
+  type: string
+  description: string
+  status: 'Pendente' | 'Em Andamento' | 'Concluída'
+  dueDate: string
+  thresholdMileage?: number
+}
+
 // Mock Data
 let mockUsers: User[] = [
   {
@@ -128,6 +138,27 @@ let mockRoutes: Route[] = [
   },
 ]
 
+let mockMaintenance: MaintenanceTask[] = [
+  {
+    id: 'm1',
+    vehicleId: 'v1',
+    type: 'Troca de Óleo',
+    description: 'Óleo sintético 5W30',
+    status: 'Pendente',
+    dueDate: new Date(Date.now() + 5 * 86400000).toISOString(),
+    thresholdMileage: 50000,
+  },
+  {
+    id: 'm2',
+    vehicleId: 'v3',
+    type: 'Revisão Motor',
+    description: 'Correia dentada',
+    status: 'Em Andamento',
+    dueDate: new Date(Date.now() - 2 * 86400000).toISOString(),
+    thresholdMileage: 120000,
+  },
+]
+
 export const api = {
   users: {
     list: async () => {
@@ -135,26 +166,12 @@ export const api = {
       await delay(500)
       return [...mockUsers]
     },
-    update: async (id: string, data: Partial<User>) => {
-      auditLog('UPDATE', 'User', { id, ...data })
-      await delay(300)
-      mockUsers = mockUsers.map((u) => (u.id === id ? { ...u, ...data } : u))
-    },
   },
   vehicles: {
     list: async () => {
       auditLog('LIST', 'Vehicle', {})
       await delay(600)
       return [...mockVehicles]
-    },
-    addDocument: async (vehicleId: string, doc: Partial<VehicleDocument>) => {
-      auditLog('ADD_DOC', 'Vehicle', { vehicleId, doc })
-      await delay(400)
-      const newDoc = { id: Math.random().toString(), ...doc } as VehicleDocument
-      mockVehicles = mockVehicles.map((v) =>
-        v.id === vehicleId ? { ...v, documents: [...v.documents, newDoc] } : v,
-      )
-      return newDoc
     },
   },
   routes: {
@@ -180,6 +197,20 @@ export const api = {
         status: success ? 'MATCH' : 'MISMATCH',
         confidence: success ? 0.95 + Math.random() * 0.04 : 0.4 + Math.random() * 0.3,
       }
+    },
+  },
+  maintenance: {
+    list: async () => {
+      auditLog('LIST', 'Maintenance', {})
+      await delay(400)
+      return [...mockMaintenance]
+    },
+    add: async (task: Partial<MaintenanceTask>) => {
+      auditLog('ADD', 'Maintenance', { task })
+      await delay(500)
+      const newTask = { id: Math.random().toString(), ...task } as MaintenanceTask
+      mockMaintenance = [...mockMaintenance, newTask]
+      return newTask
     },
   },
 }

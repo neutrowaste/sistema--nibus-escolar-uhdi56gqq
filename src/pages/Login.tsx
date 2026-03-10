@@ -37,14 +37,23 @@ export default function Login() {
     }
   }
 
+  const loginAsParent = async () => {
+    setIsLoading(true)
+    try {
+      await login('parent@escola.pt', '123456')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
       <div className="mb-8 flex flex-col items-center animate-fade-in">
         <div className="h-16 w-16 bg-primary rounded-2xl flex items-center justify-center mb-4 shadow-lg">
           <Bus className="h-8 w-8 text-primary-foreground" />
         </div>
-        <h1 className="text-3xl font-bold text-slate-900">Sistema Ônibus Escolar</h1>
-        <p className="text-slate-500 mt-2">Plataforma de Gestão de Frotas</p>
+        <h1 className="text-3xl font-bold text-slate-900 text-center">Sistema Ônibus Escolar</h1>
+        <p className="text-slate-500 mt-2 text-center">Plataforma de Gestão de Frotas e Pais</p>
       </div>
 
       <Card className="w-full max-w-md animate-slide-up">
@@ -88,6 +97,23 @@ export default function Login() {
               {isLoading ? 'Autenticando...' : 'Entrar'}
             </Button>
           </form>
+
+          <div className="mt-6 relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-white px-2 text-muted-foreground">PWA & Portal Externo</span>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            className="w-full mt-4"
+            onClick={loginAsParent}
+            disabled={isLoading}
+          >
+            Acessar Portal do Responsável (Simulação)
+          </Button>
         </CardContent>
       </Card>
     </div>

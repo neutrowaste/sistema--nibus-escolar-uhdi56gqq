@@ -23,11 +23,19 @@ const NotificationContext = createContext<NotificationContextType | null>(null)
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([
     {
+      id: '3',
+      title: 'Alerta de Manutenção',
+      message: 'Veículo XYZ-9876 atingiu 50.000km. Necessário agendar troca de óleo.',
+      read: false,
+      createdAt: new Date().toISOString(),
+      type: 'warning',
+    },
+    {
       id: '1',
       title: 'Dispositivo Offline',
       message: 'Gateway veicular ABC-1234 perdeu conexão de rede há 5 minutos.',
       read: false,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(Date.now() - 300000).toISOString(),
       type: 'warning',
     },
     {
