@@ -4,6 +4,8 @@ import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 import { AuthProvider } from './contexts/AuthContext'
+import { NotificationProvider } from './contexts/NotificationContext'
+import { OfflineSyncProvider } from './contexts/OfflineSyncContext'
 import { RequireAuth } from './components/RequireAuth'
 import Layout from './components/Layout'
 
@@ -19,29 +21,33 @@ import NotFound from './pages/NotFound'
 
 const App = () => (
   <BrowserRouter future={{ v7_startTransition: false, v7_relativeSplatPath: false }}>
-    <AuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner position="top-right" />
-        <Routes>
-          <Route path="/login" element={<Login />} />
+    <OfflineSyncProvider>
+      <NotificationProvider>
+        <AuthProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner position="top-right" />
+            <Routes>
+              <Route path="/login" element={<Login />} />
 
-          <Route element={<RequireAuth />}>
-            <Route element={<Layout />}>
-              <Route path="/" element={<Index />} />
-              <Route path="/iam/users" element={<UsersPage />} />
-              <Route path="/iam/roles" element={<RolesPage />} />
-              <Route path="/fleet/vehicles" element={<VehiclesPage />} />
-              <Route path="/ops/routes" element={<RoutesPage />} />
-              <Route path="/ops/cockpit" element={<CockpitPage />} />
-              <Route path="/ops/biometrics" element={<BiometricsPage />} />
-            </Route>
-          </Route>
+              <Route element={<RequireAuth />}>
+                <Route element={<Layout />}>
+                  <Route path="/" element={<Index />} />
+                  <Route path="/iam/users" element={<UsersPage />} />
+                  <Route path="/iam/roles" element={<RolesPage />} />
+                  <Route path="/fleet/vehicles" element={<VehiclesPage />} />
+                  <Route path="/ops/routes" element={<RoutesPage />} />
+                  <Route path="/ops/cockpit" element={<CockpitPage />} />
+                  <Route path="/ops/biometrics" element={<BiometricsPage />} />
+                </Route>
+              </Route>
 
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </TooltipProvider>
-    </AuthProvider>
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </TooltipProvider>
+        </AuthProvider>
+      </NotificationProvider>
+    </OfflineSyncProvider>
   </BrowserRouter>
 )
 

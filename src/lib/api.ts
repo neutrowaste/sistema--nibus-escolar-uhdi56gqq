@@ -24,13 +24,23 @@ export interface User {
   role: string
   status: 'Ativo' | 'Inativo'
 }
+
+export interface VehicleDocument {
+  id: string
+  title: string
+  type: string
+  expiryDate: string
+}
+
 export interface Vehicle {
   id: string
   plate: string
   model: string
   capacity: number
   status: 'Em Rota' | 'Parado' | 'Manutenção'
+  documents: VehicleDocument[]
 }
+
 export interface Route {
   id: string
   name: string
@@ -53,9 +63,50 @@ let mockUsers: User[] = [
 ]
 
 let mockVehicles: Vehicle[] = [
-  { id: 'v1', plate: 'ABC-1234', model: 'Mercedes Sprinter', capacity: 20, status: 'Em Rota' },
-  { id: 'v2', plate: 'XYZ-9876', model: 'Volvo B270F', capacity: 45, status: 'Parado' },
-  { id: 'v3', plate: 'DEF-5678', model: 'VW Volksbus', capacity: 30, status: 'Manutenção' },
+  {
+    id: 'v1',
+    plate: 'ABC-1234',
+    model: 'Mercedes Sprinter',
+    capacity: 20,
+    status: 'Em Rota',
+    documents: [
+      {
+        id: 'd1',
+        title: 'Seguro Obrigatório',
+        type: 'Seguro',
+        expiryDate: new Date(Date.now() + 15 * 86400000).toISOString(),
+      },
+      {
+        id: 'd2',
+        title: 'Licença Municipal',
+        type: 'Alvará',
+        expiryDate: new Date(Date.now() + 120 * 86400000).toISOString(),
+      },
+    ],
+  },
+  {
+    id: 'v2',
+    plate: 'XYZ-9876',
+    model: 'Volvo B270F',
+    capacity: 45,
+    status: 'Parado',
+    documents: [
+      {
+        id: 'd3',
+        title: 'Inspeção Veicular',
+        type: 'Manutenção',
+        expiryDate: new Date(Date.now() - 5 * 86400000).toISOString(),
+      },
+    ],
+  },
+  {
+    id: 'v3',
+    plate: 'DEF-5678',
+    model: 'VW Volksbus',
+    capacity: 30,
+    status: 'Manutenção',
+    documents: [],
+  },
 ]
 
 let mockRoutes: Route[] = [
@@ -95,6 +146,15 @@ export const api = {
       auditLog('LIST', 'Vehicle', {})
       await delay(600)
       return [...mockVehicles]
+    },
+    addDocument: async (vehicleId: string, doc: Partial<VehicleDocument>) => {
+      auditLog('ADD_DOC', 'Vehicle', { vehicleId, doc })
+      await delay(400)
+      const newDoc = { id: Math.random().toString(), ...doc } as VehicleDocument
+      mockVehicles = mockVehicles.map((v) =>
+        v.id === vehicleId ? { ...v, documents: [...v.documents, newDoc] } : v,
+      )
+      return newDoc
     },
   },
   routes: {

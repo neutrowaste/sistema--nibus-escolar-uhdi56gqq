@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -8,25 +8,58 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Activity, AlertTriangle } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Button } from '@/components/ui/button'
+import { Activity, AlertTriangle, Download } from 'lucide-react'
+import { useOfflineSync } from '@/contexts/OfflineSyncContext'
+import { toast } from 'sonner'
 
 export default function CockpitPage() {
   const [telemetry, setTelemetry] = useState({ lat: 100, lng: 100, speed: 45, battery: 89 })
+  const { isOnline, enqueueTelemetry } = useOfflineSync()
+
+  const isOnlineRef = useRef(isOnline)
+  const enqueueTelemetryRef = useRef(enqueueTelemetry)
+
+  useEffect(() => {
+    isOnlineRef.current = isOnline
+    enqueueTelemetryRef.current = enqueueTelemetry
+  }, [isOnline, enqueueTelemetry])
 
   useEffect(() => {
     let p = 0
     const interval = setInterval(() => {
       p += 0.005
       if (p > 1) p = 0
-      setTelemetry((prev) => ({
-        lng: p < 0.5 ? 100 + 300 * p * 2 : 400 + 400 * (p - 0.5) * 2,
-        lat: p < 0.5 ? 100 + 200 * p * 2 : 300 + 100 * (p - 0.5) * 2,
-        speed: Math.max(0, 45 + (Math.random() * 10 - 5)),
-        battery: Math.max(0, prev.battery - 0.02),
-      }))
+      setTelemetry((prev) => {
+        const nextTelemetry = {
+          lng: p < 0.5 ? 100 + 300 * p * 2 : 400 + 400 * (p - 0.5) * 2,
+          lat: p < 0.5 ? 100 + 200 * p * 2 : 300 + 100 * (p - 0.5) * 2,
+          speed: Math.max(0, 45 + (Math.random() * 10 - 5)),
+          battery: Math.max(0, prev.battery - 0.02),
+        }
+
+        if (!isOnlineRef.current) {
+          enqueueTelemetryRef.current(nextTelemetry)
+        }
+
+        return nextTelemetry
+      })
     }, 500)
     return () => clearInterval(interval)
   }, [])
+
+  const handleExport = (format: string) => {
+    toast.info(`Iniciando exportação de telemetria em ${format}...`)
+    setTimeout(() => {
+      toast.success(`Arquivo telemetry_export.${format.toLowerCase()} gerado com sucesso.`)
+    }, 1200)
+  }
 
   return (
     <div className="h-[calc(100vh-10rem)] flex flex-col lg:flex-row space-y-4 lg:space-y-0 lg:space-x-4 animate-fade-in">
@@ -48,6 +81,21 @@ export default function CockpitPage() {
                 <SelectItem value="r1">Rota Norte - Manhã</SelectItem>
               </SelectContent>
             </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="bg-white">
+                  <Download className="mr-2 h-4 w-4" /> Exportar
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleExport('PDF')}>
+                  Telemetria PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleExport('CSV')}>
+                  Telemetria CSV
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Badge variant="outline" className="bg-white px-3 py-1.5 shadow-sm">
               <span className="flex h-2 w-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>1
               Veículo Online

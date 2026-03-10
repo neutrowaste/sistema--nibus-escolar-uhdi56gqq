@@ -1,11 +1,29 @@
-import React, { useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Bus, Users, Map, AlertTriangle, CheckCircle, Activity } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
+  Bus,
+  Users,
+  Map,
+  AlertTriangle,
+  CheckCircle,
+  Activity,
+  Download,
+  FileText,
+} from 'lucide-react'
 import { api, Vehicle, Route } from '@/lib/api'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PermissionGate } from '@/components/PermissionGate'
 import { useAuth } from '@/contexts/AuthContext'
+import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
 export default function Index() {
   const { user } = useAuth()
@@ -20,6 +38,13 @@ export default function Index() {
       setIsLoading(false)
     })
   }, [])
+
+  const handleExport = (format: string) => {
+    toast.info(`Preparando relatório executivo (${format})...`)
+    setTimeout(() => {
+      toast.success(`Relatório baixado: dashboard_consolidado.${format.toLowerCase()}`)
+    }, 1500)
+  }
 
   const chartData = [
     { name: 'Seg', passageiros: 400 },
@@ -51,18 +76,88 @@ export default function Index() {
       : 0
   const presenceRate = 94.2
 
+  const expiringDocs = vehicles
+    .flatMap((v) => v.documents.map((d) => ({ ...d, plate: v.plate })))
+    .filter((d) => {
+      const days = (new Date(d.expiryDate).getTime() - Date.now()) / 86400000
+      return days <= 30
+    })
+
   return (
     <div className="space-y-6 animate-fade-in-up">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-slate-900">Dashboard Executivo</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Consolidado da Org: {user?.orgId} | Filial: {user?.branchId}
           </p>
         </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button>
+              <Download className="mr-2 h-4 w-4" /> Baixar Relatório
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => handleExport('PDF')}>
+              Exportar como PDF
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => handleExport('CSV')}>
+              Exportar como CSV
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <PermissionGate permission="page:dashboard:executive">
+        {expiringDocs.length > 0 && (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between">
+              <CardTitle className="text-lg text-amber-800 flex items-center">
+                <AlertTriangle className="mr-2 h-5 w-5 text-amber-600" />
+                Atenção: Documentação de Frota ({expiringDocs.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                {expiringDocs.map((doc) => {
+                  const isExpired = new Date(doc.expiryDate) < new Date()
+                  const daysLeft = Math.ceil(
+                    (new Date(doc.expiryDate).getTime() - Date.now()) / 86400000,
+                  )
+                  return (
+                    <div
+                      key={doc.id}
+                      className="flex items-center gap-3 bg-white p-3 rounded-md border border-amber-100"
+                    >
+                      <FileText
+                        className={cn(
+                          'h-5 w-5 shrink-0',
+                          isExpired ? 'text-red-500' : 'text-amber-500',
+                        )}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate">{doc.plate}</p>
+                        <p className="text-xs text-muted-foreground truncate">{doc.title}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span
+                          className={cn(
+                            'text-xs font-bold',
+                            isExpired ? 'text-red-600' : 'text-amber-600',
+                          )}
+                        >
+                          {isExpired ? 'Vencido' : `${daysLeft} dias`}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
