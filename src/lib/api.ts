@@ -54,6 +54,8 @@ export interface Route {
   stops: number
   status: 'Agendada' | 'Em Andamento' | 'Concluída'
   checkpoints: Checkpoint[]
+  whatsappAlerts?: boolean
+  alertRadius?: number
 }
 export interface MaintenanceTask {
   id: string
@@ -87,6 +89,19 @@ export interface NotificationLog {
   eventName: string
   message: string
   status: 'Sent' | 'Failed' | 'Pending'
+}
+export interface ChatMessage {
+  id: string
+  sender: 'admin' | 'parent'
+  text: string
+  timestamp: string
+}
+export interface Conversation {
+  id: string
+  parentName: string
+  studentName: string
+  unread: number
+  messages: ChatMessage[]
 }
 
 let mockDrivers: Driver[] = [
@@ -134,16 +149,6 @@ let mockDocuments: SystemDocument[] = [
     expiryDate: new Date(Date.now() + 15 * 86400000).toISOString(),
     status: 'Expiring',
   },
-  {
-    id: 'doc3',
-    title: 'Licenciamento',
-    type: 'CRLV',
-    entityType: 'vehicle',
-    entityId: 'v2',
-    issueDate: '2024-02-01',
-    expiryDate: '2025-02-01',
-    status: 'Valid',
-  },
 ]
 
 let mockRoutes: Route[] = [
@@ -156,6 +161,8 @@ let mockRoutes: Route[] = [
     vehiclePlate: 'ABC-1234',
     stops: 2,
     status: 'Em Andamento',
+    whatsappAlerts: true,
+    alertRadius: 500,
     checkpoints: [
       { id: 'cp1', name: 'Ponto A (Mercado)', lat: 150, lng: 200, radius: 20 },
       { id: 'cp2', name: 'Ponto B (Praça)', lat: 250, lng: 350, radius: 20 },
@@ -170,6 +177,8 @@ let mockRoutes: Route[] = [
     vehiclePlate: 'XYZ-9876',
     stops: 0,
     status: 'Agendada',
+    whatsappAlerts: false,
+    alertRadius: 300,
     checkpoints: [],
   },
 ]
@@ -187,6 +196,37 @@ let mockMaintenance: MaintenanceTask[] = [
 let mockStudents: Student[] = []
 let mockNotificationSettings: NotificationSetting[] = []
 let mockNotificationLogs: NotificationLog[] = []
+
+let mockConversations: Conversation[] = [
+  {
+    id: 'c1',
+    parentName: 'Ana Silva',
+    studentName: 'Lucas Silva',
+    unread: 1,
+    messages: [
+      {
+        id: 'm1',
+        sender: 'parent',
+        text: 'Bom dia, o Lucas não vai à escola hoje, pois está resfriado.',
+        timestamp: new Date(Date.now() - 3600000).toISOString(),
+      },
+    ],
+  },
+  {
+    id: 'c2',
+    parentName: 'Carlos Souza',
+    studentName: 'Mariana Souza',
+    unread: 0,
+    messages: [
+      {
+        id: 'm2',
+        sender: 'admin',
+        text: 'Olá Carlos, a van atrasará 5 minutos devido ao trânsito.',
+        timestamp: new Date(Date.now() - 86400000).toISOString(),
+      },
+    ],
+  },
+]
 
 export const api = {
   drivers: {
@@ -291,6 +331,31 @@ export const api = {
       auditLog('NOTIFY', eventId, { message, routeId })
     },
   },
+  chat: {
+    getConversations: async () => {
+      await delay(300)
+      return [...mockConversations]
+    },
+    sendMessage: async (convId: string, text: string, sender: 'admin' | 'parent') => {
+      await delay(300)
+      const msg: ChatMessage = {
+        id: Math.random().toString(),
+        sender,
+        text,
+        timestamp: new Date().toISOString(),
+      }
+      mockConversations = mockConversations.map((c) =>
+        c.id === convId
+          ? { ...c, messages: [...c.messages, msg], unread: sender === 'parent' ? c.unread + 1 : 0 }
+          : c,
+      )
+      return msg
+    },
+    markAsRead: async (convId: string) => {
+      mockConversations = mockConversations.map((c) => (c.id === convId ? { ...c, unread: 0 } : c))
+      return true
+    },
+  },
   performance: {
     getMetrics: async () => {
       await delay(300)
@@ -302,6 +367,11 @@ export const api = {
         punctuality: [
           { day: 'Seg', onTime: 95, delayed: 5 },
           { day: 'Ter', onTime: 92, delayed: 8 },
+        ],
+        fuelData: [
+          { route: 'Rota Norte', distance: 48 },
+          { route: 'Rota Sul', distance: 35 },
+          { route: 'Rota Leste', distance: 52 },
         ],
       }
     },

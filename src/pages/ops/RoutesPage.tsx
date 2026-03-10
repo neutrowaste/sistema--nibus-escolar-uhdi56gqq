@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -63,7 +64,7 @@ export default function RoutesPage() {
   }
 
   const openModal = (route?: Route) => {
-    setFormData(route || { status: 'Agendada', stops: 0 })
+    setFormData(route || { status: 'Agendada', stops: 0, whatsappAlerts: false, alertRadius: 500 })
     setIsModalOpen(true)
   }
 
@@ -73,7 +74,7 @@ export default function RoutesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Gestão de Rotas</h1>
           <p className="text-sm text-muted-foreground">
-            Criação e mapeamento de percursos escolares.
+            Criação e mapeamento de percursos escolares com geofencing.
           </p>
         </div>
         <Button onClick={() => openModal()}>
@@ -90,10 +91,7 @@ export default function RoutesPage() {
         <div className="flex flex-col items-center justify-center p-12 text-center border-2 border-dashed rounded-lg bg-slate-50">
           <RouteIcon className="w-12 h-12 text-slate-300 mb-4" />
           <h3 className="text-lg font-medium text-slate-900">Nenhuma rota configurada</h3>
-          <p className="text-sm text-slate-500 mt-1 mb-4">
-            Defina pontos de partida e paradas para criar rotas.
-          </p>
-          <Button onClick={() => openModal()} variant="outline">
+          <Button onClick={() => openModal()} variant="outline" className="mt-4">
             Adicionar Rota
           </Button>
         </div>
@@ -104,9 +102,19 @@ export default function RoutesPage() {
               <CardHeader className="pb-2 flex flex-row items-start justify-between">
                 <div>
                   <CardTitle className="text-lg">{r.name}</CardTitle>
-                  <p className="text-sm font-mono bg-slate-100 px-1.5 py-0.5 rounded border inline-block mt-2">
-                    {r.vehiclePlate}
-                  </p>
+                  <div className="flex gap-2 mt-2">
+                    <p className="text-sm font-mono bg-slate-100 px-1.5 py-0.5 rounded border inline-block">
+                      {r.vehiclePlate}
+                    </p>
+                    {r.whatsappAlerts && (
+                      <Badge
+                        variant="outline"
+                        className="bg-green-50 text-green-700 border-green-200 text-[10px]"
+                      >
+                        WhatsApp Ativo
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <div className="flex gap-1 -mr-2 -mt-2">
                   <Button variant="ghost" size="icon" onClick={() => openModal(r)}>
@@ -125,14 +133,11 @@ export default function RoutesPage() {
                   <div className="flex items-center text-sm text-slate-600 gap-2">
                     <MapPin className="h-4 w-4 text-red-500" /> {r.endPoint || 'Não definido'}
                   </div>
-                  <div className="text-sm text-slate-500 ml-6 border-l-2 border-slate-200 pl-4 py-1">
-                    {r.stops} paradas intermediárias
-                  </div>
                 </div>
                 <div className="mt-4 flex items-center justify-between border-t pt-4">
                   <Badge
                     variant={r.status === 'Em Andamento' ? 'default' : 'secondary'}
-                    className={r.status === 'Em Andamento' ? 'bg-blue-500 hover:bg-blue-600' : ''}
+                    className={r.status === 'Em Andamento' ? 'bg-blue-500' : ''}
                   >
                     {r.status}
                   </Badge>
@@ -147,11 +152,11 @@ export default function RoutesPage() {
       )}
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>{formData.id ? 'Editar Rota' : 'Nova Rota'}</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-4 max-h-[60vh] pr-2">
             <div className="space-y-2">
               <Label>Nome da Rota</Label>
               <Input
@@ -166,7 +171,6 @@ export default function RoutesPage() {
                 <Input
                   value={formData.startPoint || ''}
                   onChange={(e) => setFormData({ ...formData, startPoint: e.target.value })}
-                  placeholder="Origem"
                 />
               </div>
               <div className="space-y-2">
@@ -174,57 +178,60 @@ export default function RoutesPage() {
                 <Input
                   value={formData.endPoint || ''}
                   onChange={(e) => setFormData({ ...formData, endPoint: e.target.value })}
-                  placeholder="Destino"
                 />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Total de Paradas</Label>
-                <Input
-                  type="number"
-                  value={formData.stops || ''}
-                  onChange={(e) => setFormData({ ...formData, stops: Number(e.target.value) })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Veículo Alocado (Placa)</Label>
+                <Label>Veículo (Placa)</Label>
                 <Input
                   value={formData.vehiclePlate || ''}
                   onChange={(e) => setFormData({ ...formData, vehiclePlate: e.target.value })}
-                  placeholder="ABC-1234"
                 />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Motorista</Label>
                 <Input
                   value={formData.driver || ''}
                   onChange={(e) => setFormData({ ...formData, driver: e.target.value })}
-                  placeholder="Nome do Condutor"
                 />
               </div>
-              <div className="space-y-2">
-                <Label>Status Inicial</Label>
-                <Select
-                  value={formData.status}
-                  onValueChange={(val: any) => setFormData({ ...formData, status: val })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Agendada">Agendada</SelectItem>
-                    <SelectItem value="Em Andamento">Em Andamento</SelectItem>
-                    <SelectItem value="Concluída">Concluída</SelectItem>
-                  </SelectContent>
-                </Select>
+            </div>
+
+            <div className="mt-4 pt-4 border-t space-y-4">
+              <h4 className="text-sm font-semibold text-slate-800">Geofencing & Notificações</h4>
+              <div className="flex items-center justify-between p-3 border rounded-lg bg-slate-50">
+                <div>
+                  <Label className="text-base">Alertas WhatsApp Automáticos</Label>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Notificar responsáveis por proximidade
+                  </p>
+                </div>
+                <Switch
+                  checked={!!formData.whatsappAlerts}
+                  onCheckedChange={(v) => setFormData({ ...formData, whatsappAlerts: v })}
+                />
               </div>
+              {formData.whatsappAlerts && (
+                <div className="space-y-2 animate-fade-in">
+                  <Label>Raio de Gatilho do Alerta (metros)</Label>
+                  <Input
+                    type="number"
+                    value={formData.alertRadius || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, alertRadius: Number(e.target.value) })
+                    }
+                    placeholder="Ex: 500"
+                  />
+                  <p className="text-xs text-slate-500">
+                    Dispara alerta quando o ônibus entra neste raio da parada.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={handleSave}>Salvar Rota</Button>
+            <Button onClick={handleSave}>Salvar Configuração</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

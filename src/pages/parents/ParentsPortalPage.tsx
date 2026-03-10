@@ -1,26 +1,36 @@
 import React, { useEffect, useState } from 'react'
-import { Bus, Clock, BellRing, LogOut, Navigation } from 'lucide-react'
+import { Bus, Clock, BellRing, LogOut, Navigation, MessageSquare, Send } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { api, ChatMessage } from '@/lib/api'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 
 export default function ParentsPortalPage() {
   const { logout, user } = useAuth()
   const [telemetry, setTelemetry] = useState({ lat: 100, lng: 100 })
   const [arrivalAlertSent, setArrivalAlertSent] = useState(false)
 
+  // Chat state
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [msgText, setMsgText] = useState('')
+
   useEffect(() => {
+    // Fetch initial chat
+    api.chat.getConversations().then((data) => {
+      const parentConv = data.find((c) => c.id === 'c1')
+      if (parentConv) setMessages(parentConv.messages)
+    })
+
+    // GPS Telemetry sim
     let p = 0
     const interval = setInterval(() => {
       p += 0.005
       if (p > 1) p = 0
-
-      const lng = 100 + 300 * p
-      const lat = 100 + 200 * p
-
-      setTelemetry({ lng, lat })
-
+      setTelemetry({ lng: 100 + 300 * p, lat: 100 + 200 * p })
       if (p >= 0.8 && p < 0.85 && !arrivalAlertSent) {
         setArrivalAlertSent(true)
         toast.info('Notificação de Chegada!', {
@@ -32,6 +42,14 @@ export default function ParentsPortalPage() {
     }, 100)
     return () => clearInterval(interval)
   }, [arrivalAlertSent])
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!msgText.trim()) return
+    const newMsg = await api.chat.sendMessage('c1', msgText, 'parent')
+    setMessages((prev) => [...prev, newMsg])
+    setMsgText('')
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans animate-fade-in">
@@ -50,120 +68,140 @@ export default function ParentsPortalPage() {
         </Button>
       </header>
 
-      <main className="flex-1 p-4 w-full max-w-md mx-auto space-y-5 mt-2">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900">Olá, Responsável</h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Acompanhe a viagem do seu dependente em tempo real.
-          </p>
-        </div>
-
-        <Card className="overflow-hidden border-2 border-slate-200 shadow-sm">
-          <div className="h-56 bg-slate-100 relative">
-            <svg
-              className="absolute inset-0 w-full h-full"
-              viewBox="0 0 500 300"
-              preserveAspectRatio="none"
+      <main className="flex-1 p-4 w-full max-w-md mx-auto mt-2 flex flex-col">
+        <Tabs defaultValue="map" className="flex-1 flex flex-col">
+          <TabsList className="grid grid-cols-2 mb-6">
+            <TabsTrigger
+              value="map"
+              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
             >
-              <path
-                d="M 100 100 L 400 300"
-                fill="none"
-                stroke="#cbd5e1"
-                strokeWidth="6"
-                strokeDasharray="10 10"
-                className="animate-pulse"
-              />
-              <circle
-                cx={telemetry.lng}
-                cy={telemetry.lat}
-                r="14"
-                fill="#3b82f6"
-                className="transition-all duration-100 ease-linear shadow-lg"
-              />
-              <circle
-                cx={telemetry.lng}
-                cy={telemetry.lat}
-                r="24"
-                fill="#3b82f6"
-                opacity="0.2"
-                className="animate-ping"
-              />
-              <circle cx="400" cy="300" r="12" fill="#10b981" />
-              <text
-                x="400"
-                y="275"
-                fill="#10b981"
-                fontSize="16"
-                fontWeight="bold"
-                textAnchor="middle"
-              >
-                Sua Casa
-              </text>
-              <text
-                x="100"
-                y="75"
-                fill="#64748b"
-                fontSize="16"
-                fontWeight="bold"
-                textAnchor="middle"
-              >
-                Escola
-              </text>
-            </svg>
-            <div className="absolute top-3 right-3 bg-white/95 px-2.5 py-1.5 rounded-full shadow-sm text-xs font-semibold flex items-center gap-1.5 border">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
-              </span>
-              Ao vivo
-            </div>
-          </div>
-          <CardContent className="p-5 bg-white">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h3 className="font-bold text-lg text-slate-900">Veículo ABC-1234</h3>
-                <p className="text-sm text-slate-600 flex items-center gap-1.5 mt-1 font-medium">
-                  <Clock className="h-4 w-4 text-slate-400" /> Chegada est. 12:45 PM
-                </p>
-              </div>
-              <div className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
-                Em Rota
-              </div>
-            </div>
-            <Button className="w-full" variant="outline">
-              <Navigation className="mr-2 h-4 w-4" /> Ver Rota Completa
-            </Button>
-          </CardContent>
-        </Card>
+              <Navigation className="w-4 h-4 mr-2" /> Rastreio
+            </TabsTrigger>
+            <TabsTrigger
+              value="chat"
+              className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            >
+              <MessageSquare className="w-4 h-4 mr-2" /> Fale Conosco
+            </TabsTrigger>
+          </TabsList>
 
-        <Card className="shadow-sm border-slate-200">
-          <CardContent className="p-5">
-            <h4 className="font-semibold text-slate-800 mb-6">Status da Viagem</h4>
-            <div className="relative border-l-2 border-slate-200 ml-4 space-y-8">
-              <div className="relative pl-6">
-                <div className="absolute -left-[11px] top-0 bg-green-500 rounded-full w-5 h-5 ring-4 ring-white shadow-sm flex items-center justify-center">
-                  <div className="w-2 h-2 bg-white rounded-full"></div>
-                </div>
-                <p className="font-semibold text-sm text-slate-900">
-                  Embarque Confirmado na Escola
-                </p>
-                <p className="text-xs text-slate-500 mt-0.5">12:30 PM • Autenticação Biométrica</p>
-              </div>
-              <div className="relative pl-6">
-                <div className="absolute -left-[11px] top-0 bg-blue-500 rounded-full w-5 h-5 ring-4 ring-white shadow-sm">
-                  <div className="w-full h-full rounded-full animate-ping bg-blue-400 opacity-50"></div>
-                </div>
-                <p className="font-semibold text-sm text-slate-900">A caminho (Rota Sul)</p>
-                <p className="text-xs text-slate-500 mt-0.5">Posição atual do ônibus</p>
-              </div>
-              <div className="relative pl-6">
-                <div className="absolute -left-[11px] top-0 bg-slate-200 rounded-full w-5 h-5 ring-4 ring-white shadow-sm border-2 border-slate-300"></div>
-                <p className="font-medium text-sm text-slate-500">Ponto de Parada (Sua Casa)</p>
-                <p className="text-xs text-slate-400 mt-0.5">Previsão: 12:45 PM</p>
-              </div>
+          <TabsContent value="map" className="space-y-5 mt-0 flex-1">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900">Olá, Responsável</h2>
+              <p className="text-sm text-slate-500 mt-1">Acompanhe a viagem do seu dependente.</p>
             </div>
-          </CardContent>
-        </Card>
+            <Card className="overflow-hidden border-2 border-slate-200 shadow-sm">
+              <div className="h-56 bg-slate-100 relative">
+                <svg
+                  className="absolute inset-0 w-full h-full"
+                  viewBox="0 0 500 300"
+                  preserveAspectRatio="none"
+                >
+                  <path
+                    d="M 100 100 L 400 300"
+                    fill="none"
+                    stroke="#cbd5e1"
+                    strokeWidth="6"
+                    strokeDasharray="10 10"
+                    className="animate-pulse"
+                  />
+                  <circle
+                    cx={telemetry.lng}
+                    cy={telemetry.lat}
+                    r="14"
+                    fill="#3b82f6"
+                    className="transition-all duration-100 ease-linear shadow-lg"
+                  />
+                  <circle cx="400" cy="300" r="12" fill="#10b981" />
+                  <text
+                    x="400"
+                    y="275"
+                    fill="#10b981"
+                    fontSize="16"
+                    fontWeight="bold"
+                    textAnchor="middle"
+                  >
+                    Sua Casa
+                  </text>
+                </svg>
+                <div className="absolute top-3 right-3 bg-white/95 px-2.5 py-1.5 rounded-full shadow-sm text-xs font-semibold flex items-center gap-1.5 border">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                  </span>
+                  Ao vivo
+                </div>
+              </div>
+              <CardContent className="p-5 bg-white">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-bold text-lg text-slate-900">Veículo ABC-1234</h3>
+                    <p className="text-sm text-slate-600 flex items-center gap-1.5 mt-1 font-medium">
+                      <Clock className="h-4 w-4 text-slate-400" /> Chegada est. 12:45 PM
+                    </p>
+                  </div>
+                  <div className="bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
+                    Em Rota
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="chat" className="mt-0 flex-1 flex flex-col min-h-[60vh]">
+            <Card className="flex-1 flex flex-col overflow-hidden border-2 border-slate-200">
+              <div className="bg-slate-100 p-4 border-b font-semibold text-slate-800 text-center text-sm">
+                Atendimento - Base Escolar
+              </div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
+                {messages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={cn(
+                      'flex flex-col max-w-[85%]',
+                      m.sender === 'parent' ? 'ml-auto items-end' : 'items-start',
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'px-4 py-2.5 rounded-2xl text-sm shadow-sm',
+                        m.sender === 'parent'
+                          ? 'bg-primary text-white rounded-br-none'
+                          : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none',
+                      )}
+                    >
+                      {m.text}
+                    </div>
+                    <span className="text-[10px] text-slate-400 mt-1">
+                      {new Date(m.timestamp).toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="p-3 bg-white border-t">
+                <form onSubmit={handleSend} className="flex gap-2">
+                  <Input
+                    placeholder="Avisar ausência, atraso..."
+                    value={msgText}
+                    onChange={(e) => setMsgText(e.target.value)}
+                    className="flex-1 rounded-full"
+                  />
+                  <Button
+                    type="submit"
+                    size="icon"
+                    className="rounded-full"
+                    disabled={!msgText.trim()}
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </form>
+              </div>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   )

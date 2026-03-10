@@ -11,6 +11,7 @@ import {
   IdCard,
   TrendingUp,
   FileText,
+  MessageCircle,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -35,6 +36,7 @@ const navItems = [
   { title: 'Rotas', url: '/ops/routes', icon: MapIcon },
   { title: 'Cockpit', url: '/ops/cockpit', icon: Compass },
   { title: 'Desempenho', url: '/ops/performance', icon: TrendingUp },
+  { title: 'Comunicações', url: '/ops/chat', icon: MessageCircle },
   { title: 'Biometria', url: '/ops/biometrics', icon: ScanFace },
 ]
 

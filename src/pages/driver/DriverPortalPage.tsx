@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react'
-import { MapPin, Navigation, CheckCircle2, LogOut, CircleDot } from 'lucide-react'
+import { MapPin, Navigation, CheckCircle2, LogOut, CircleDot, Wifi, WifiOff } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { useOfflineSync } from '@/contexts/OfflineSyncContext'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -10,6 +11,7 @@ import { cn } from '@/lib/utils'
 
 export default function DriverPortalPage() {
   const { logout, user } = useAuth()
+  const { isOnline, toggleSimulation, syncQueueCount, enqueueTelemetry } = useOfflineSync()
   const [route, setRoute] = useState<Route | null>(null)
   const [location, setLocation] = useState({ lat: 100, lng: 100 })
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([])
@@ -43,9 +45,15 @@ export default function DriverPortalPage() {
           if ((cp as any).status === 'completed') return cp
           const dist = Math.hypot(cp.lat - currLat, cp.lng - currLng)
           if (dist <= cp.radius) {
-            toast.success(`Checkpoint Atingido: ${cp.name}`, {
-              description: 'Status atualizado automaticamente via Geofencing.',
-            })
+            // Check Offline Sync capabilities
+            if (!isOnline) {
+              enqueueTelemetry({ type: 'checkin', cpId: cp.id, timestamp: Date.now() })
+              toast.warning(
+                `Modo Offline: Checkpoint ${cp.name} salvo localmente para sincronização.`,
+              )
+            } else {
+              toast.success(`Checkpoint Atingido online: ${cp.name}`)
+            }
             return { ...cp, status: 'completed' as any }
           }
           return cp
@@ -53,7 +61,7 @@ export default function DriverPortalPage() {
       )
     }, 200)
     return () => clearInterval(interval)
-  }, [isNavigating, route])
+  }, [isNavigating, route, isOnline, enqueueTelemetry])
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
@@ -62,17 +70,39 @@ export default function DriverPortalPage() {
           <h1 className="font-bold text-lg leading-none">Motorista App</h1>
           <p className="text-xs text-slate-400 mt-1">{user?.name} • Veículo ABC-1234</p>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={logout}
-          className="text-slate-300 hover:text-white"
-        >
-          <LogOut className="h-5 w-5" />
-        </Button>
+        <div className="flex gap-2 items-center">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleSimulation}
+            className={cn('relative', isOnline ? 'text-slate-300' : 'text-amber-500')}
+            title="Simular perda de rede"
+          >
+            {isOnline ? <Wifi className="h-5 w-5" /> : <WifiOff className="h-5 w-5" />}
+            {syncQueueCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-[10px] rounded-full h-4 min-w-4 flex items-center justify-center px-1">
+                {syncQueueCount}
+              </span>
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={logout}
+            className="text-slate-300 hover:text-white"
+          >
+            <LogOut className="h-5 w-5" />
+          </Button>
+        </div>
       </header>
 
       <main className="flex-1 p-4 w-full max-w-md mx-auto space-y-4">
+        {!isOnline && (
+          <div className="bg-amber-100 border border-amber-200 text-amber-800 p-3 rounded-md text-sm font-medium animate-pulse flex items-center gap-2">
+            <WifiOff className="h-4 w-4" /> Trabalhando Offline - Dados serão sincronizados
+          </div>
+        )}
+
         {route ? (
           <>
             <Card className="border-none shadow-sm overflow-hidden">
@@ -102,17 +132,6 @@ export default function DriverPortalPage() {
                       className="opacity-50"
                     />
                   ))}
-                  {checkpoints.map((cp) => (
-                    <circle
-                      key={cp.id + 'd'}
-                      cx={cp.lat}
-                      cy={cp.lng}
-                      r="6"
-                      fill={(cp as any).status === 'completed' ? '#10b981' : '#fff'}
-                      stroke={(cp as any).status === 'completed' ? '#fff' : '#64748b'}
-                      strokeWidth="3"
-                    />
-                  ))}
                   <circle
                     cx={location.lat}
                     cy={location.lng}
@@ -120,18 +139,7 @@ export default function DriverPortalPage() {
                     fill="#3b82f6"
                     className="shadow-lg transition-all duration-200"
                   />
-                  <circle
-                    cx={location.lat}
-                    cy={location.lng}
-                    r="24"
-                    fill="#3b82f6"
-                    opacity="0.2"
-                    className="animate-ping"
-                  />
                 </svg>
-                <div className="absolute top-3 left-3 bg-white/90 backdrop-blur px-3 py-1.5 rounded-full shadow-sm text-xs font-semibold flex items-center gap-2">
-                  <Navigation className="h-3.5 w-3.5 text-blue-600" /> GPS Integrado Ativo
-                </div>
               </div>
               <CardContent className="p-4 bg-white">
                 <div className="flex justify-between items-center mb-4">

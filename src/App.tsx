@@ -22,6 +22,7 @@ import RoutesPage from './pages/ops/RoutesPage'
 import CockpitPage from './pages/ops/CockpitPage'
 import PerformancePage from './pages/ops/PerformancePage'
 import BiometricsPage from './pages/ops/BiometricsPage'
+import ChatPage from './pages/ops/ChatPage'
 import NotificationsPage from './pages/settings/NotificationsPage'
 import ParentsPortalPage from './pages/parents/ParentsPortalPage'
 import DriverPortalPage from './pages/driver/DriverPortalPage'
@@ -53,6 +54,7 @@ const App = () => (
                   <Route path="/ops/cockpit" element={<CockpitPage />} />
                   <Route path="/ops/performance" element={<PerformancePage />} />
                   <Route path="/ops/biometrics" element={<BiometricsPage />} />
+                  <Route path="/ops/chat" element={<ChatPage />} />
                   <Route path="/settings/notifications" element={<NotificationsPage />} />
                 </Route>
                 <Route path="/parents/portal" element={<ParentsPortalPage />} />
