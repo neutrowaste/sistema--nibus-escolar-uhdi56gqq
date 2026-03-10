@@ -1,0 +1,21 @@
+{
+  "name": "Sistema Ônibus Escolar",
+  "short_name": "Bus App",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f172a",
+  "description": "Plataforma PWA para gestão e monitoramento da frota escolar.",
+  "icons": [
+    {
+      "src": "https://img.usecurling.com/i?q=bus&color=solid-black&shape=fill",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://img.usecurling.com/i?q=bus&color=solid-black&shape=fill",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

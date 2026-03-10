@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { api, Vehicle } from '@/lib/api'
 import {
   Table,
@@ -12,72 +11,79 @@ import {
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Plus, Wrench, FileText, Settings2, Upload } from 'lucide-react'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Plus, Pencil, Trash2, Bus } from 'lucide-react'
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from '@/components/ui/sheet'
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
-import { cn } from '@/lib/utils'
 
 export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [formData, setFormData] = useState<Partial<Vehicle>>({})
 
-  useEffect(() => {
+  const loadData = () => {
+    setIsLoading(true)
     api.vehicles.list().then((data) => {
       setVehicles(data)
       setIsLoading(false)
     })
+  }
+
+  useEffect(() => {
+    loadData()
   }, [])
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Em Rota':
-        return 'bg-blue-100 text-blue-800 hover:bg-blue-100'
-      case 'Parado':
-        return 'bg-slate-100 text-slate-800 hover:bg-slate-100'
-      case 'Manutenção':
-        return 'bg-amber-100 text-amber-800 hover:bg-amber-100'
-      default:
-        return ''
+  const handleSave = async () => {
+    if (!formData.plate || !formData.model) return toast.error('Preencha os campos obrigatórios.')
+    try {
+      if (formData.id) await api.vehicles.update(formData.id, formData)
+      else await api.vehicles.add(formData)
+      toast.success('Veículo salvo com sucesso!')
+      setIsModalOpen(false)
+      loadData()
+    } catch (e) {
+      toast.error('Erro ao salvar veículo.')
     }
   }
 
-  const formatDate = (isoString: string) =>
-    new Intl.DateTimeFormat('pt-BR').format(new Date(isoString))
+  const handleDelete = async (id: string) => {
+    if (!confirm('Deseja realmente remover este veículo?')) return
+    await api.vehicles.delete(id)
+    toast.success('Veículo removido.')
+    loadData()
+  }
 
-  const handleUploadDocument = () => {
-    toast.success('Documento anexado com sucesso. Sincronizando com a frota...')
+  const openModal = (vehicle?: Vehicle) => {
+    setFormData(vehicle || { status: 'Parado', capacity: 20 })
+    setIsModalOpen(true)
   }
 
   return (
     <div className="space-y-6 animate-fade-in-up">
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Frota de Veículos</h1>
-          <p className="text-sm text-muted-foreground">
-            Gestão e configuração dos dispositivos da frota.
-          </p>
+          <p className="text-sm text-muted-foreground">Gestão e registro dos ônibus escolares.</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link to="/fleet/maintenance">
-              <Wrench className="mr-2 h-4 w-4" /> Manutenções
-            </Link>
-          </Button>
-          <Button>
-            <Plus className="mr-2 h-4 w-4" /> Novo Veículo
-          </Button>
-        </div>
+        <Button onClick={() => openModal()}>
+          <Plus className="mr-2 h-4 w-4" /> Novo Veículo
+        </Button>
       </div>
 
       <Card>
@@ -86,6 +92,15 @@ export default function VehiclesPage() {
             <div className="p-6 space-y-4">
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />
+            </div>
+          ) : vehicles.length === 0 ? (
+            <div className="p-12 text-center flex flex-col items-center border-dashed border-2 rounded-lg bg-slate-50 m-4">
+              <Bus className="h-12 w-12 text-slate-300 mb-4" />
+              <h3 className="text-lg font-medium text-slate-900">Nenhum veículo registrado</h3>
+              <p className="text-sm text-slate-500 mb-4">Cadastre o primeiro veículo da frota.</p>
+              <Button onClick={() => openModal()} variant="outline">
+                Adicionar Veículo
+              </Button>
             </div>
           ) : (
             <Table>
@@ -101,104 +116,39 @@ export default function VehiclesPage() {
               <TableBody>
                 {vehicles.map((v) => (
                   <TableRow key={v.id}>
-                    <TableCell className="font-medium flex items-center gap-2">
-                      <div className="bg-slate-100 p-1.5 rounded-md border border-slate-200">
-                        <span className="font-mono text-xs font-bold uppercase">{v.plate}</span>
-                      </div>
+                    <TableCell className="font-medium">
+                      <span className="bg-slate-100 px-2 py-1 rounded font-mono text-xs border">
+                        {v.plate}
+                      </span>
                     </TableCell>
                     <TableCell>{v.model}</TableCell>
                     <TableCell>{v.capacity} alunos</TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className={getStatusColor(v.status)}>
+                      <Badge
+                        variant="secondary"
+                        className={
+                          v.status === 'Em Rota'
+                            ? 'bg-blue-100 text-blue-800'
+                            : v.status === 'Manutenção'
+                              ? 'bg-amber-100 text-amber-800'
+                              : ''
+                        }
+                      >
                         {v.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Sheet>
-                          <SheetTrigger asChild>
-                            <Button variant="ghost" size="sm" onClick={() => setSelectedVehicle(v)}>
-                              <FileText className="mr-2 h-4 w-4" /> Docs
-                            </Button>
-                          </SheetTrigger>
-                          <SheetContent className="sm:max-w-md overflow-y-auto">
-                            <SheetHeader>
-                              <SheetTitle>Documentação do Veículo</SheetTitle>
-                              <SheetDescription>
-                                Placa: {selectedVehicle?.plate} | {selectedVehicle?.model}
-                              </SheetDescription>
-                            </SheetHeader>
-                            <div className="mt-6 space-y-4">
-                              {selectedVehicle?.documents?.length === 0 && (
-                                <p className="text-sm text-muted-foreground text-center py-4 border border-dashed rounded-lg">
-                                  Nenhum documento anexado.
-                                </p>
-                              )}
-                              {selectedVehicle?.documents?.map((doc) => {
-                                const isExpired = new Date(doc.expiryDate) < new Date()
-                                const isExpiring =
-                                  !isExpired &&
-                                  new Date(doc.expiryDate) < new Date(Date.now() + 30 * 86400000)
-                                return (
-                                  <div
-                                    key={doc.id}
-                                    className="flex items-center justify-between p-3 border rounded-lg bg-slate-50/50"
-                                  >
-                                    <div>
-                                      <p className="font-medium text-sm">{doc.title}</p>
-                                      <p className="text-xs text-muted-foreground">
-                                        Vence em: {formatDate(doc.expiryDate)}
-                                      </p>
-                                    </div>
-                                    <Badge
-                                      variant={
-                                        isExpired
-                                          ? 'destructive'
-                                          : isExpiring
-                                            ? 'secondary'
-                                            : 'default'
-                                      }
-                                      className={cn(isExpiring && 'bg-amber-100 text-amber-800')}
-                                    >
-                                      {isExpired
-                                        ? 'Vencido'
-                                        : isExpiring
-                                          ? 'Vence em breve'
-                                          : 'Regular'}
-                                    </Badge>
-                                  </div>
-                                )
-                              })}
-
-                              <div className="pt-6 border-t mt-6">
-                                <h4 className="text-sm font-semibold mb-4">
-                                  Anexar Novo Documento
-                                </h4>
-                                <div className="space-y-4">
-                                  <div className="space-y-2">
-                                    <Label>Nome do Documento</Label>
-                                    <Input placeholder="Ex: CRLV 2024" />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Data de Vencimento</Label>
-                                    <Input type="date" />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Arquivo</Label>
-                                    <Input type="file" className="cursor-pointer" />
-                                  </div>
-                                  <Button className="w-full" onClick={handleUploadDocument}>
-                                    <Upload className="mr-2 h-4 w-4" /> Fazer Upload
-                                  </Button>
-                                </div>
-                              </div>
-                            </div>
-                          </SheetContent>
-                        </Sheet>
-                        <Button variant="ghost" size="sm">
-                          <Settings2 className="h-4 w-4" />
-                        </Button>
-                      </div>
+                    <TableCell className="text-right space-x-2">
+                      <Button variant="ghost" size="icon" onClick={() => openModal(v)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-red-500 hover:text-red-600"
+                        onClick={() => handleDelete(v.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -207,6 +157,63 @@ export default function VehiclesPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{formData.id ? 'Editar Veículo' : 'Novo Veículo'}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Placa</Label>
+                <Input
+                  value={formData.plate || ''}
+                  onChange={(e) => setFormData({ ...formData, plate: e.target.value })}
+                  placeholder="ABC-1234"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Modelo</Label>
+                <Input
+                  value={formData.model || ''}
+                  onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                  placeholder="Ex: VW Volksbus"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Capacidade</Label>
+                <Input
+                  type="number"
+                  value={formData.capacity || ''}
+                  onChange={(e) => setFormData({ ...formData, capacity: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select
+                  value={formData.status}
+                  onValueChange={(val: any) => setFormData({ ...formData, status: val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Parado">Parado</SelectItem>
+                    <SelectItem value="Em Rota">Em Rota</SelectItem>
+                    <SelectItem value="Manutenção">Manutenção</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleSave}>Salvar Veículo</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
