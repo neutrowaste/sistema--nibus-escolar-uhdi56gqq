@@ -33,6 +33,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
       if (email && pass) {
+        localStorage.setItem('orgId', 'org-8103')
+        localStorage.setItem('branchId', 'br-001')
         setUser({
           id: 'u-123',
           name: 'Admin Global',
@@ -40,7 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           avatar: 'https://img.usecurling.com/ppl/thumbnail?gender=female&seed=12',
           orgId: 'org-8103',
           branchId: 'br-001',
-          permissions: ['page:iam', 'page:fleet', 'page:ops', 'action:edit'],
+          permissions: [
+            'page:iam',
+            'page:fleet',
+            'page:ops',
+            'action:edit',
+            'page:dashboard:executive',
+          ],
         })
         toast.success('Login efetuado com sucesso!')
         navigate('/')
@@ -56,6 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = () => {
+    localStorage.removeItem('orgId')
+    localStorage.removeItem('branchId')
     setUser(null)
     navigate('/login')
   }

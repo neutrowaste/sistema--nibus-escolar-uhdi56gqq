@@ -1,9 +1,20 @@
-// Mock API Client to simulate backend interactions
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-// Auditing interceptor simulation
+const getHeaders = () => {
+  return {
+    'X-Org-Id': localStorage.getItem('orgId') || 'org-8103',
+    'X-Branch-Id': localStorage.getItem('branchId') || 'br-001',
+    'Content-Type': 'application/json',
+  }
+}
+
 export const auditLog = (action: string, entity: string, details: any) => {
-  console.log(`[AUDIT] Action: ${action} | Entity: ${entity} | Details:`, details)
+  console.log(
+    `[AUDIT] Action: ${action} | Entity: ${entity} | Headers:`,
+    getHeaders(),
+    '| Details:',
+    details,
+  )
 }
 
 export interface User {
@@ -13,7 +24,6 @@ export interface User {
   role: string
   status: 'Ativo' | 'Inativo'
 }
-
 export interface Vehicle {
   id: string
   plate: string
@@ -21,7 +31,6 @@ export interface Vehicle {
   capacity: number
   status: 'Em Rota' | 'Parado' | 'Manutenção'
 }
-
 export interface Route {
   id: string
   name: string
@@ -41,7 +50,6 @@ let mockUsers: User[] = [
     status: 'Ativo',
   },
   { id: '2', name: 'Ana Oliveira', email: 'ana@escola.pt', role: 'Coordenador', status: 'Ativo' },
-  { id: '3', name: 'Pedro Santos', email: 'pedro@escola.pt', role: 'Motorista', status: 'Inativo' },
 ]
 
 let mockVehicles: Vehicle[] = [
@@ -69,29 +77,49 @@ let mockRoutes: Route[] = [
   },
 ]
 
-// Fetchers
 export const api = {
   users: {
     list: async () => {
+      auditLog('LIST', 'User', {})
       await delay(500)
       return [...mockUsers]
     },
     update: async (id: string, data: Partial<User>) => {
+      auditLog('UPDATE', 'User', { id, ...data })
       await delay(300)
       mockUsers = mockUsers.map((u) => (u.id === id ? { ...u, ...data } : u))
-      auditLog('UPDATE', 'User', { id, ...data })
     },
   },
   vehicles: {
     list: async () => {
+      auditLog('LIST', 'Vehicle', {})
       await delay(600)
       return [...mockVehicles]
     },
   },
   routes: {
     list: async () => {
+      auditLog('LIST', 'Route', {})
       await delay(400)
       return [...mockRoutes]
+    },
+  },
+  biometrics: {
+    requestPresignedUrl: async (studentId: string, filename: string) => {
+      auditLog('REQUEST_URL', 'Biometrics', { studentId, filename })
+      await delay(800)
+      return {
+        uploadUrl: `https://mock-s3.usecurling.com/uploads/${studentId}/${filename}?token=sec123`,
+      }
+    },
+    processImage: async (url: string) => {
+      auditLog('PROCESS', 'Biometrics', { url })
+      await delay(1500)
+      const success = Math.random() > 0.2
+      return {
+        status: success ? 'MATCH' : 'MISMATCH',
+        confidence: success ? 0.95 + Math.random() * 0.04 : 0.4 + Math.random() * 0.3,
+      }
     },
   },
 }

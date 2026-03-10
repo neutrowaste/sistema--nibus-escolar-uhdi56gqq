@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Toaster } from '@/components/ui/toaster'
 import { Toaster as Sonner } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -14,6 +14,7 @@ import RolesPage from './pages/iam/RolesPage'
 import VehiclesPage from './pages/fleet/VehiclesPage'
 import RoutesPage from './pages/ops/RoutesPage'
 import CockpitPage from './pages/ops/CockpitPage'
+import BiometricsPage from './pages/ops/BiometricsPage'
 import NotFound from './pages/NotFound'
 
 const App = () => (
@@ -33,6 +34,7 @@ const App = () => (
               <Route path="/fleet/vehicles" element={<VehiclesPage />} />
               <Route path="/ops/routes" element={<RoutesPage />} />
               <Route path="/ops/cockpit" element={<CockpitPage />} />
+              <Route path="/ops/biometrics" element={<BiometricsPage />} />
             </Route>
           </Route>
 
