@@ -37,10 +37,10 @@ export default function Login() {
     }
   }
 
-  const loginAsParent = async () => {
+  const loginAsRole = async (email: string) => {
     setIsLoading(true)
     try {
-      await login('parent@escola.pt', '123456')
+      await login(email, '123456')
     } finally {
       setIsLoading(false)
     }
@@ -53,7 +53,7 @@ export default function Login() {
           <Bus className="h-8 w-8 text-primary-foreground" />
         </div>
         <h1 className="text-3xl font-bold text-slate-900 text-center">Sistema Ônibus Escolar</h1>
-        <p className="text-slate-500 mt-2 text-center">Plataforma de Gestão de Frotas e Pais</p>
+        <p className="text-slate-500 mt-2 text-center">Plataforma de Gestão Integrada</p>
       </div>
 
       <Card className="w-full max-w-md animate-slide-up">
@@ -103,17 +103,27 @@ export default function Login() {
               <span className="w-full border-t" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-2 text-muted-foreground">PWA & Portal Externo</span>
+              <span className="bg-white px-2 text-muted-foreground">PWA & Portais Externos</span>
             </div>
           </div>
-          <Button
-            variant="outline"
-            className="w-full mt-4"
-            onClick={loginAsParent}
-            disabled={isLoading}
-          >
-            Acessar Portal do Responsável (Simulação)
-          </Button>
+          <div className="grid grid-cols-2 gap-2 mt-4">
+            <Button
+              variant="outline"
+              className="w-full text-xs h-auto py-2"
+              onClick={() => loginAsRole('parent@escola.pt')}
+              disabled={isLoading}
+            >
+              Portal do Responsável
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full text-xs h-auto py-2"
+              onClick={() => loginAsRole('driver@escola.pt')}
+              disabled={isLoading}
+            >
+              App do Motorista
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

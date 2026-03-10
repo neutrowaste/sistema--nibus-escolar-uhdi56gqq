@@ -52,13 +52,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userName = 'Responsável (Familiar)'
           perms = ['page:parents:portal']
           redirectPath = '/parents/portal'
+        } else if (email.includes('driver')) {
+          userRole = 'driver'
+          userName = 'João Mendes (Motorista)'
+          perms = ['page:driver:portal']
+          redirectPath = '/driver/portal'
         }
 
         setUser({
-          id: email.includes('parent') ? 'p-123' : 'u-123',
+          id: userRole === 'admin' ? 'u-123' : userRole === 'parent' ? 'p-123' : 'd-123',
           name: userName,
           email: email,
-          avatar: 'https://img.usecurling.com/ppl/thumbnail?gender=female&seed=12',
+          avatar: `https://img.usecurling.com/ppl/thumbnail?gender=${userRole === 'driver' ? 'male' : 'female'}&seed=12`,
           orgId: 'org-8103',
           branchId: 'br-001',
           permissions: perms,

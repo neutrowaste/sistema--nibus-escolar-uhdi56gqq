@@ -17,12 +17,14 @@ import StudentsPage from './pages/iam/StudentsPage'
 import DriversPage from './pages/iam/DriversPage'
 import VehiclesPage from './pages/fleet/VehiclesPage'
 import MaintenancePage from './pages/fleet/MaintenancePage'
+import DocumentsPage from './pages/fleet/DocumentsPage'
 import RoutesPage from './pages/ops/RoutesPage'
 import CockpitPage from './pages/ops/CockpitPage'
 import PerformancePage from './pages/ops/PerformancePage'
 import BiometricsPage from './pages/ops/BiometricsPage'
 import NotificationsPage from './pages/settings/NotificationsPage'
 import ParentsPortalPage from './pages/parents/ParentsPortalPage'
+import DriverPortalPage from './pages/driver/DriverPortalPage'
 import CommercialSummary from './pages/CommercialSummary'
 import NotFound from './pages/NotFound'
 
@@ -46,6 +48,7 @@ const App = () => (
                   <Route path="/iam/drivers" element={<DriversPage />} />
                   <Route path="/fleet/vehicles" element={<VehiclesPage />} />
                   <Route path="/fleet/maintenance" element={<MaintenancePage />} />
+                  <Route path="/fleet/documents" element={<DocumentsPage />} />
                   <Route path="/ops/routes" element={<RoutesPage />} />
                   <Route path="/ops/cockpit" element={<CockpitPage />} />
                   <Route path="/ops/performance" element={<PerformancePage />} />
@@ -53,6 +56,7 @@ const App = () => (
                   <Route path="/settings/notifications" element={<NotificationsPage />} />
                 </Route>
                 <Route path="/parents/portal" element={<ParentsPortalPage />} />
+                <Route path="/driver/portal" element={<DriverPortalPage />} />
                 <Route path="/commercial-summary" element={<CommercialSummary />} />
               </Route>
 

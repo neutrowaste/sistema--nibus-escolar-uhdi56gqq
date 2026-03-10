@@ -8,40 +8,43 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { Activity, Download, MapPin, Layers, Filter } from 'lucide-react'
+import { Slider } from '@/components/ui/slider'
+import {
+  Activity,
+  MapPin,
+  Filter,
+  Play,
+  Pause,
+  FastForward,
+  History,
+  AlertCircle,
+} from 'lucide-react'
 import { useOfflineSync } from '@/contexts/OfflineSyncContext'
-import { useNotifications } from '@/contexts/NotificationContext'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
+import { format } from 'date-fns'
 
 export default function CockpitPage() {
-  const [telemetry, setTelemetry] = useState({ lat: 100, lng: 100, speed: 45, battery: 89 })
-  const { isOnline, enqueueTelemetry } = useOfflineSync()
-  const { addNotification } = useNotifications()
+  const [viewMode, setViewMode] = useState('live') // 'live' or 'history'
+  const [telemetry, setTelemetry] = useState({ lat: 100, lng: 100, speed: 45 })
+  const { isOnline } = useOfflineSync()
+  const [liveAlerts, setLiveAlerts] = useState<
+    { id: number; msg: string; time: string; type: 'alert' | 'warning' }[]
+  >([])
 
-  // Advanced Map Filters State
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [periodFilter, setPeriodFilter] = useState('all')
+  // History State
+  const [historyData, setHistoryData] = useState<any[]>([])
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [playbackProgress, setPlaybackProgress] = useState(0)
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
 
-  const isOnlineRef = useRef(isOnline)
-  const enqueueTelemetryRef = useRef(enqueueTelemetry)
-  const addNotificationRef = useRef(addNotification)
-  const lastAlertRef = useRef({ outOfBounds: 0, speeding: 0, approaching: 0 })
+  const lastAlertRef = useRef({ deviation: 0, stop: 0 })
 
+  // Live Simulation
   useEffect(() => {
-    isOnlineRef.current = isOnline
-    enqueueTelemetryRef.current = enqueueTelemetry
-    addNotificationRef.current = addNotification
-  }, [isOnline, enqueueTelemetry, addNotification])
-
-  useEffect(() => {
+    if (viewMode !== 'live') return
     let p = 0
     const interval = setInterval(() => {
       p += 0.005
@@ -49,59 +52,81 @@ export default function CockpitPage() {
       setTelemetry((prev) => {
         const nextLng = p < 0.5 ? 100 + 300 * p * 2 : 400 + 400 * (p - 0.5) * 2
         const nextLat = p < 0.5 ? 100 + 200 * p * 2 : 300 + 100 * (p - 0.5) * 2
-        const nextSpeed = Math.max(0, 45 + (Math.random() * 20 - 5))
-
-        const nextTelemetry = {
-          lng: nextLng,
-          lat: nextLat,
-          speed: nextSpeed,
-          battery: Math.max(0, prev.battery - 0.02),
-        }
-        if (!isOnlineRef.current) enqueueTelemetryRef.current(nextTelemetry)
+        const speed = Math.max(0, 45 + (Math.random() * 20 - 5))
 
         const now = Date.now()
-        const dist = Math.sqrt(Math.pow(nextLng - 300, 2) + Math.pow(nextLat - 200, 2))
+        // Simulate Deviation Alert
+        if (p > 0.45 && p < 0.55 && now - lastAlertRef.current.deviation > 30000) {
+          setLiveAlerts((la) =>
+            [
+              {
+                id: now,
+                msg: 'Desvio de Rota Crítico: Veículo ABC-1234',
+                time: new Date().toLocaleTimeString(),
+                type: 'alert',
+              },
+              ...la,
+            ].slice(0, 5),
+          )
+          toast.error('Alerta de Desvio Detectado!')
+          lastAlertRef.current.deviation = now
+        }
+        // Simulate Long Stop Alert
+        if (speed < 5 && now - lastAlertRef.current.stop > 40000) {
+          setLiveAlerts((la) =>
+            [
+              {
+                id: now,
+                msg: 'Parada Indevida (>5min) fora de checkpoint.',
+                time: new Date().toLocaleTimeString(),
+                type: 'warning',
+              },
+              ...la,
+            ].slice(0, 5),
+          )
+          lastAlertRef.current.stop = now
+        }
 
-        if (p > 0.78 && p < 0.82 && now - lastAlertRef.current.approaching > 60000) {
-          api.notifications.sendExternal('bus_approaching', `Ônibus em aproximação.`, 'r1')
-          lastAlertRef.current.approaching = now
-        }
-        if (dist > 180 && now - lastAlertRef.current.outOfBounds > 20000) {
-          addNotificationRef.current({
-            title: 'Alerta: Desvio',
-            message: `Veículo fora da rota.`,
-            type: 'warning',
-          })
-          lastAlertRef.current.outOfBounds = now
-        }
-        if (nextSpeed > 60 && now - lastAlertRef.current.speeding > 15000) {
-          addNotificationRef.current({
-            title: 'Excesso de Velocidade',
-            message: `${nextSpeed.toFixed(0)}km/h.`,
-            type: 'alert',
-          })
-          lastAlertRef.current.speeding = now
-        }
-        return nextTelemetry
+        return { lng: nextLng, lat: nextLat, speed }
       })
     }, 500)
     return () => clearInterval(interval)
-  }, [])
+  }, [viewMode])
 
-  const handleExport = (format: string) => {
-    toast.info(`Exportando telemetria em ${format}...`)
-    setTimeout(() => toast.success(`Arquivo gerado.`), 1200)
+  // History Playback
+  useEffect(() => {
+    if (viewMode === 'history') {
+      api.history.getTrajectory(selectedDate, 'v1').then((data) => setHistoryData(data))
+    }
+  }, [viewMode, selectedDate])
+
+  useEffect(() => {
+    if (!isPlaying || historyData.length === 0) return
+    const interval = setInterval(() => {
+      setPlaybackProgress((prev) => {
+        if (prev >= 100) {
+          setIsPlaying(false)
+          return 100
+        }
+        return prev + 1
+      })
+    }, 100)
+    return () => clearInterval(interval)
+  }, [isPlaying, historyData])
+
+  const getHistoryPoint = () => {
+    if (historyData.length < 2) return { lat: 100, lng: 100 }
+    const idx = Math.min(
+      Math.floor((playbackProgress / 100) * (historyData.length - 1)),
+      historyData.length - 2,
+    )
+    const p1 = historyData[idx]
+    const p2 = historyData[idx + 1]
+    const localP = (playbackProgress / 100) * (historyData.length - 1) - idx
+    return { lat: p1.lat + (p2.lat - p1.lat) * localP, lng: p1.lng + (p2.lng - p1.lng) * localP }
   }
 
-  const showActiveVehicle =
-    (statusFilter === 'all' || statusFilter === 'on_time') &&
-    (periodFilter === 'all' || periodFilter === 'morning')
-  const showDelayedVehicle =
-    (statusFilter === 'all' || statusFilter === 'alert') &&
-    (periodFilter === 'all' || periodFilter === 'morning')
-  const showMaintenanceVehicle =
-    (statusFilter === 'all' || statusFilter === 'maintenance') &&
-    (periodFilter === 'all' || periodFilter === 'afternoon')
+  const hPoint = getHistoryPoint()
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col lg:flex-row space-y-4 lg:space-y-0 lg:space-x-4 animate-fade-in">
@@ -110,175 +135,176 @@ export default function CockpitPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Cockpit Operacional</h1>
             <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <MapPin className="h-4 w-4" /> Integração de Tracking e Filtros Avançados
+              <MapPin className="h-4 w-4" /> Monitoramento Avançado
             </p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex bg-white border rounded-md shadow-sm p-1">
-              <Filter className="h-4 w-4 text-slate-400 mx-2 my-auto" />
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px] border-0 focus:ring-0 h-8 text-xs bg-transparent">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Qualquer Status</SelectItem>
-                  <SelectItem value="on_time">No Horário</SelectItem>
-                  <SelectItem value="alert">Alerta / Atraso</SelectItem>
-                  <SelectItem value="maintenance">Manutenção</SelectItem>
-                </SelectContent>
-              </Select>
-              <div className="w-px h-6 bg-slate-200 my-auto"></div>
-              <Select value={periodFilter} onValueChange={setPeriodFilter}>
-                <SelectTrigger className="w-[140px] border-0 focus:ring-0 h-8 text-xs bg-transparent">
-                  <SelectValue placeholder="Período" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Qualquer Período</SelectItem>
-                  <SelectItem value="morning">Manhã</SelectItem>
-                  <SelectItem value="afternoon">Tarde</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="bg-white">
-                  <Download className="mr-2 h-4 w-4" /> Exportar
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => handleExport('PDF')}>
-                  Telemetria PDF
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleExport('CSV')}>
-                  Telemetria CSV
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          <Tabs value={viewMode} onValueChange={setViewMode} className="w-auto">
+            <TabsList>
+              <TabsTrigger value="live" className="flex items-center gap-2">
+                <Activity className="w-4 h-4" /> Tempo Real
+              </TabsTrigger>
+              <TabsTrigger value="history" className="flex items-center gap-2">
+                <History className="w-4 h-4" /> Playback Histórico
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
-        <Card className="flex-1 relative overflow-hidden bg-slate-100 border-2 border-slate-200 shadow-inner rounded-xl group">
-          <iframe
-            className="absolute inset-0 w-full h-full pointer-events-auto transition-all duration-700"
-            src="https://www.openstreetmap.org/export/embed.html?bbox=-46.75,-23.65,-46.50,-23.45&amp;layer=mapnik"
-            style={{ border: 0, filter: 'grayscale(0.3) contrast(1.1)' }}
-            title="OpenStreetMap View"
-          />
-
+        <Card className="flex-1 relative overflow-hidden bg-slate-100 border-2 border-slate-200 shadow-inner rounded-xl">
           <svg
             className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-md"
             xmlns="http://www.w3.org/2000/svg"
           >
-            <path
-              d="M 100 100 L 400 300 L 800 400"
-              fill="none"
-              stroke="#64748b"
-              strokeWidth="6"
-              strokeLinecap="round"
-              className="opacity-60"
-            />
-            <circle
-              cx="300"
-              cy="200"
-              r="180"
-              fill="#ef4444"
-              fillOpacity="0.05"
-              stroke="#ef4444"
-              strokeWidth="2"
-              strokeDasharray="8 8"
-              className="opacity-70"
-            />
-            {showActiveVehicle && (
-              <path
-                d={`M 100 100 L ${telemetry.lng} ${telemetry.lat}`}
-                fill="none"
-                stroke="#3b82f6"
-                strokeWidth="6"
-                strokeLinecap="round"
-              />
-            )}
-
-            <circle cx="250" cy="200" r="10" fill="#10b981" stroke="#fff" strokeWidth="3" />
-            <circle cx="600" cy="350" r="10" fill="#3b82f6" stroke="#fff" strokeWidth="3" />
-
-            {/* Mocked vehicles based on filters */}
-            {showDelayedVehicle && (
-              <circle
-                cx="350"
-                cy="150"
-                r="10"
-                fill="#ef4444"
-                stroke="#fff"
-                strokeWidth="3"
-                className="animate-pulse"
-              />
-            )}
-            {showMaintenanceVehicle && (
-              <circle cx="500" cy="250" r="10" fill="#f59e0b" stroke="#fff" strokeWidth="3" />
+            {viewMode === 'live' ? (
+              <>
+                <path
+                  d="M 100 100 L 400 300 L 800 400"
+                  fill="none"
+                  stroke="#cbd5e1"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                />
+                <path
+                  d={`M 100 100 L ${telemetry.lng} ${telemetry.lat}`}
+                  fill="none"
+                  stroke="#3b82f6"
+                  strokeWidth="6"
+                  strokeLinecap="round"
+                />
+                <circle
+                  cx={telemetry.lng}
+                  cy={telemetry.lat}
+                  r="8"
+                  fill="#2563eb"
+                  stroke="#fff"
+                  strokeWidth="3"
+                />
+                <circle
+                  cx={telemetry.lng}
+                  cy={telemetry.lat}
+                  r="20"
+                  fill="#3b82f6"
+                  opacity="0.2"
+                  className="animate-ping"
+                />
+              </>
+            ) : (
+              <>
+                {historyData.length > 0 && (
+                  <path
+                    d={`M ${historyData.map((p) => `${p.lng} ${p.lat}`).join(' L ')}`}
+                    fill="none"
+                    stroke="#94a3b8"
+                    strokeWidth="4"
+                    strokeDasharray="8 8"
+                  />
+                )}
+                {historyData.length > 0 && (
+                  <circle
+                    cx={hPoint.lng}
+                    cy={hPoint.lat}
+                    r="10"
+                    fill="#f59e0b"
+                    stroke="#fff"
+                    strokeWidth="3"
+                    className="shadow-lg"
+                  />
+                )}
+              </>
             )}
           </svg>
-
-          {showActiveVehicle && (
-            <div
-              className="absolute pointer-events-none transition-all duration-300 ease-linear"
-              style={{ top: telemetry.lat - 16, left: telemetry.lng - 16 }}
-            >
-              <div className="h-8 w-8 bg-blue-600 rounded-full border-4 border-white shadow-[0_0_15px_rgba(59,130,246,0.8)] flex items-center justify-center relative z-10">
-                <div className="h-2 w-2 bg-white rounded-full animate-pulse"></div>
-              </div>
-              <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-sm text-white text-xs px-2.5 py-1 rounded-md shadow-lg whitespace-nowrap border border-slate-700 font-medium">
-                ABC-1234
-              </div>
-            </div>
-          )}
-
-          <div className="absolute top-4 right-4 bg-white/95 backdrop-blur shadow-sm p-2 rounded-lg border flex gap-2 pointer-events-auto">
-            <Button variant="secondary" size="sm" className="h-8 text-xs">
-              <Layers className="h-3 w-3 mr-1" /> Mapa Base
-            </Button>
-          </div>
         </Card>
       </div>
 
       <div className="w-full lg:w-80 flex flex-col gap-4">
-        <Card className="p-5 flex-1 flex flex-col">
-          <h3 className="font-semibold mb-5 flex items-center text-slate-800">
-            <Activity className="w-4 h-4 mr-2 text-blue-500" /> Veículo Focado
-          </h3>
-          <div className="space-y-6 flex-1">
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 shadow-sm">
-              <div className="flex justify-between text-sm mb-2">
-                <span className="text-slate-500 font-medium">Velocidade (GPS)</span>
-                <span
-                  className={
-                    telemetry.speed > 60
-                      ? 'font-mono font-bold text-red-600'
-                      : 'font-mono font-bold text-slate-700'
-                  }
-                >
-                  {showActiveVehicle ? telemetry.speed.toFixed(0) : '0'} km/h
-                </span>
+        {viewMode === 'live' ? (
+          <Card className="p-0 flex-1 flex flex-col overflow-hidden">
+            <div className="p-4 border-b bg-slate-50">
+              <h3 className="font-semibold flex items-center text-slate-800">
+                <Activity className="w-4 h-4 mr-2 text-blue-500" /> Feed de Alertas em Tempo Real
+              </h3>
+            </div>
+            <div className="flex-1 overflow-auto p-4 space-y-3">
+              {liveAlerts.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-10">
+                  Monitorando rotas. Nenhum alerta crítico.
+                </p>
+              ) : (
+                liveAlerts.map((alert) => (
+                  <div
+                    key={alert.id}
+                    className={`p-3 rounded-lg border text-sm animate-slide-down ${alert.type === 'alert' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}
+                  >
+                    <div className="flex items-center gap-2 font-semibold mb-1">
+                      <AlertCircle
+                        className={`w-4 h-4 ${alert.type === 'alert' ? 'text-red-500' : 'text-amber-500'}`}
+                      />
+                      <span className={alert.type === 'alert' ? 'text-red-800' : 'text-amber-800'}>
+                        Alerta do Sistema
+                      </span>
+                      <span className="ml-auto text-xs font-normal text-slate-500">
+                        {alert.time}
+                      </span>
+                    </div>
+                    <p className={alert.type === 'alert' ? 'text-red-700' : 'text-amber-700'}>
+                      {alert.msg}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+        ) : (
+          <Card className="p-5 flex-1 flex flex-col">
+            <h3 className="font-semibold mb-5 flex items-center text-slate-800">
+              <History className="w-4 h-4 mr-2 text-amber-500" /> Controles de Playback
+            </h3>
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Data da Viagem</label>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                />
               </div>
-              <div className="h-2.5 bg-slate-200 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-500 ${telemetry.speed > 60 ? 'bg-red-500' : 'bg-blue-500'}`}
-                  style={{ width: showActiveVehicle ? `${(telemetry.speed / 80) * 100}%` : '0%' }}
-                ></div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Veículo</label>
+                <Select defaultValue="v1">
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="v1">ABC-1234 (Volksbus)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mt-4 space-y-4">
+                <div className="flex justify-between items-center">
+                  <Button variant="outline" size="icon" onClick={() => setIsPlaying(!isPlaying)}>
+                    {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => setPlaybackProgress(0)}>
+                    <History className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="pt-2">
+                  <Slider
+                    value={[playbackProgress]}
+                    onValueChange={(v) => setPlaybackProgress(v[0])}
+                    max={100}
+                    step={1}
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-slate-500">
+                  <span>Início do dia</span>
+                  <span>Fim do dia</span>
+                </div>
               </div>
             </div>
-            <div className="pt-2">
-              <div className="flex items-start gap-3 text-sm text-slate-700 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
-                <Filter className="w-5 h-5 shrink-0 mt-0.5 text-blue-500" />
-                <span className="leading-relaxed">
-                  Filtros ativos. Visualizando{' '}
-                  <strong>{showActiveVehicle ? '1' : '0'} veículo(s)</strong> no mapa com base nos
-                  critérios de status e agendamento.
-                </span>
-              </div>
-            </div>
-          </div>
-        </Card>
+          </Card>
+        )}
       </div>
     </div>
   )

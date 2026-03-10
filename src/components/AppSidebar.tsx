@@ -10,6 +10,7 @@ import {
   Wrench,
   IdCard,
   TrendingUp,
+  FileText,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -30,6 +31,7 @@ const navItems = [
   { title: 'Perfis', url: '/iam/roles', icon: Shield },
   { title: 'Veículos', url: '/fleet/vehicles', icon: Bus },
   { title: 'Manutenção', url: '/fleet/maintenance', icon: Wrench },
+  { title: 'Documentos', url: '/fleet/documents', icon: FileText },
   { title: 'Rotas', url: '/ops/routes', icon: MapIcon },
   { title: 'Cockpit', url: '/ops/cockpit', icon: Compass },
   { title: 'Desempenho', url: '/ops/performance', icon: TrendingUp },
