@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Card } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -34,9 +34,10 @@ import {
   SquareDashed,
   Check,
   X,
+  Route as RouteIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { api } from '@/lib/api'
+import { api, Route } from '@/lib/api'
 import { useGoogleMaps } from '@/contexts/GoogleMapsContext'
 
 declare global {
@@ -87,6 +88,16 @@ export default function CockpitPage() {
   const lastAlertRef = useRef(0)
   const animationFrameRef = useRef<number | null>(null)
 
+  // Route Editing State
+  const [dbRoutes, setDbRoutes] = useState<Route[]>([])
+  const [editingRoute, setEditingRoute] = useState<Route | null>(null)
+  const prevRouteIdRef = useRef<string | null>(null)
+  const editingMarkersRef = useRef<any[]>([])
+
+  useEffect(() => {
+    api.routes.list().then(setDbRoutes)
+  }, [])
+
   const initMap = useCallback(() => {
     if (!mapRef.current || mapInstance.current || !window.google?.maps) return
     mapInstance.current = new window.google.maps.Map(mapRef.current, {
@@ -103,7 +114,7 @@ export default function CockpitPage() {
       strokeColor: '#3b82f6',
       strokeOpacity: 0.8,
       strokeWeight: 6,
-      zIndex: 50, // Ensure route draws above streets
+      zIndex: 50,
     })
 
     busMarkerInstance.current = new window.google.maps.marker.AdvancedMarkerElement({
@@ -143,19 +154,16 @@ export default function CockpitPage() {
       new window.google.maps.marker.AdvancedMarkerElement({
         position: { lat: -23.565414, lng: -46.654881 },
         content: createIconElement(stopSvg),
-        map: mapInstance.current,
       }),
       new window.google.maps.marker.AdvancedMarkerElement({
         position: { lat: -23.578416, lng: -46.655633 },
         content: createIconElement(stopSvg),
-        map: mapInstance.current,
       }),
     ]
     maintenanceMarkersRef.current = [
       new window.google.maps.marker.AdvancedMarkerElement({
         position: { lat: -23.581416, lng: -46.651633 },
         content: createIconElement(maintSvg),
-        map: mapInstance.current,
       }),
     ]
   }, [])
@@ -229,19 +237,9 @@ export default function CockpitPage() {
     [],
   )
 
-  const loadRouteData = useCallback(async () => {
-    const wp =
-      viewMode === 'live'
-        ? [
-            { lat: -23.561414, lng: -46.655881 },
-            { lat: -23.573416, lng: -46.653633 },
-            { lat: -23.587416, lng: -46.657633 },
-          ]
-        : await api.history.getTrajectory(selectedDate, 'v1')
-
+  const drawRoute = useCallback((wp: any[], fitBounds = false) => {
     if (!window.google?.maps?.DirectionsService || wp.length < 2) {
-      // Fallback straight lines if API is missing
-      const path = wp.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
+      const path = wp.map((w: any) => new window.google.maps.LatLng(w.lat, w.lng))
       routePathRef.current = path
       setPathLength(path.length)
       if (polylineInstance.current) polylineInstance.current.setPath(path)
@@ -251,9 +249,9 @@ export default function CockpitPage() {
     const directionsService = new window.google.maps.DirectionsService()
     const origin = wp[0]
     const destination = wp[wp.length - 1]
-    const intermediates = wp.slice(1, -1).map((p) => ({
+    const intermediates = wp.slice(1, -1).map((p: any) => ({
       location: { lat: p.lat, lng: p.lng },
-      stopover: false,
+      stopover: true,
     }))
 
     directionsService.route(
@@ -267,15 +265,13 @@ export default function CockpitPage() {
         let path: any[] = []
 
         if (status === 'OK' && response && response.routes[0]) {
-          // Extract polyline perfectly snapped to roads
           response.routes[0].legs.forEach((leg: any) => {
             leg.steps.forEach((step: any) => {
               step.path.forEach((p: any) => path.push(p))
             })
           })
         } else {
-          console.warn('DirectionsService request failed:', status, '- Usando fallback.')
-          path = wp.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
+          path = wp.map((w: any) => new window.google.maps.LatLng(w.lat, w.lng))
         }
 
         routePathRef.current = path
@@ -285,23 +281,41 @@ export default function CockpitPage() {
           polylineInstance.current.setPath(path)
         }
 
-        if (path.length > 0 && mapInstance.current) {
+        if (path.length > 0 && mapInstance.current && fitBounds) {
           const bounds = new window.google.maps.LatLngBounds()
           path.forEach((p: any) => bounds.extend(p))
           mapInstance.current.fitBounds(bounds)
-
-          if (viewMode === 'live') {
-            liveProgressRef.current = 0
-            setLiveAlerts([])
-          } else {
-            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
-            setPlaybackProgress(0)
-            updateBusPosition(0, false, 'Histórico')
-          }
         }
       },
     )
-  }, [viewMode, selectedDate, updateBusPosition])
+  }, [])
+
+  const loadModeData = useCallback(async () => {
+    if (viewMode === 'routes') {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+      return
+    }
+
+    const wp =
+      viewMode === 'live'
+        ? [
+            { lat: -23.561414, lng: -46.655881 },
+            { lat: -23.573416, lng: -46.653633 },
+            { lat: -23.587416, lng: -46.657633 },
+          ]
+        : await api.history.getTrajectory(selectedDate, 'v1')
+
+    drawRoute(wp, true)
+
+    if (viewMode === 'live') {
+      liveProgressRef.current = 0
+      setLiveAlerts([])
+    } else {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+      setPlaybackProgress(0)
+      updateBusPosition(0, false, 'Histórico')
+    }
+  }, [viewMode, selectedDate, drawRoute, updateBusPosition])
 
   const startLiveSimulation = useCallback(() => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
@@ -357,8 +371,11 @@ export default function CockpitPage() {
     if (!isLoaded || loadError) return
     let mounted = true
 
-    initMap()
-    loadRouteData().then(() => {
+    if (!mapInstance.current) {
+      initMap()
+    }
+
+    loadModeData().then(() => {
       if (!mounted) return
       if (viewMode === 'live') startLiveSimulation()
     })
@@ -367,24 +384,78 @@ export default function CockpitPage() {
       mounted = false
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
     }
-  }, [isLoaded, loadError, initMap, loadRouteData, startLiveSimulation, viewMode])
+  }, [isLoaded, loadError, initMap, loadModeData, startLiveSimulation, viewMode])
 
   useEffect(() => {
     if (!mapInstance.current) return
     if (busMarkerInstance.current)
-      busMarkerInstance.current.map = layers.buses ? mapInstance.current : null
+      busMarkerInstance.current.map =
+        layers.buses && viewMode !== 'routes' ? mapInstance.current : null
     if (trafficLayerInstance.current)
       trafficLayerInstance.current.setMap(layers.traffic ? mapInstance.current : null)
     stopsMarkersRef.current.forEach((m) => {
-      m.map = layers.stops ? mapInstance.current : null
+      m.map = layers.stops && viewMode !== 'routes' ? mapInstance.current : null
     })
     maintenanceMarkersRef.current.forEach((m) => {
-      m.map = layers.maintenance ? mapInstance.current : null
+      m.map = layers.maintenance && viewMode !== 'routes' ? mapInstance.current : null
     })
-  }, [layers])
+  }, [layers, viewMode])
 
   useEffect(() => {
-    if (viewMode === 'live' || !isPlaying) return
+    if (!mapInstance.current) return
+
+    editingMarkersRef.current.forEach((m) => {
+      if (m) m.map = null
+    })
+    editingMarkersRef.current = []
+
+    if (viewMode === 'routes' && editingRoute) {
+      editingMarkersRef.current = editingRoute.checkpoints.map((cp, idx) => {
+        const el = document.createElement('div')
+        el.innerHTML = `<div style="background-color: #3b82f6; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${idx + 1}</div>`
+        return new window.google.maps.marker.AdvancedMarkerElement({
+          position: { lat: cp.lat, lng: cp.lng },
+          map: mapInstance.current,
+          content: el,
+        })
+      })
+
+      const isNewRoute = prevRouteIdRef.current !== editingRoute.id
+      drawRoute(editingRoute.checkpoints, isNewRoute)
+      prevRouteIdRef.current = editingRoute.id
+    } else if (viewMode === 'routes') {
+      if (polylineInstance.current) polylineInstance.current.setPath([])
+    }
+  }, [viewMode, editingRoute, drawRoute])
+
+  useEffect(() => {
+    if (!mapInstance.current) return
+    const listener = window.google.maps.event.addListener(
+      mapInstance.current,
+      'click',
+      (e: any) => {
+        if (viewMode === 'routes' && editingRoute) {
+          const newCp = {
+            id: Math.random().toString(),
+            name: `Parada ${editingRoute.checkpoints.length + 1}`,
+            lat: e.latLng.lat(),
+            lng: e.latLng.lng(),
+            radius: 500,
+          }
+          setEditingRoute((prev) => {
+            if (!prev) return prev
+            return { ...prev, checkpoints: [...prev.checkpoints, newCp] }
+          })
+        }
+      },
+    )
+    return () => {
+      window.google.maps.event.removeListener(listener)
+    }
+  }, [viewMode, editingRoute])
+
+  useEffect(() => {
+    if (viewMode === 'live' || viewMode === 'routes' || !isPlaying) return
     const interval = setInterval(() => {
       setPlaybackProgress((prev) => {
         const next = prev + 1
@@ -444,8 +515,11 @@ export default function CockpitPage() {
             <TabsTrigger value="live" className="flex items-center gap-2">
               <Activity className="w-4 h-4" /> Tempo Real
             </TabsTrigger>
+            <TabsTrigger value="routes" className="flex items-center gap-2">
+              <RouteIcon className="w-4 h-4" /> Rotas e Paradas
+            </TabsTrigger>
             <TabsTrigger value="history" className="flex items-center gap-2">
-              <History className="w-4 h-4" /> Playback Histórico
+              <History className="w-4 h-4" /> Playback
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -471,29 +545,31 @@ export default function CockpitPage() {
 
         {isLoaded && !loadError && (
           <>
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex gap-2">
-              {!isDrawing ? (
-                <Button
-                  variant="secondary"
-                  className="bg-white/95 backdrop-blur shadow-sm font-semibold border-slate-200"
-                  onClick={startDrawing}
-                >
-                  <SquareDashed className="w-4 h-4 mr-2" /> Nova Zona (Geofencing)
-                </Button>
-              ) : (
-                <>
+            {viewMode === 'live' && (
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex gap-2">
+                {!isDrawing ? (
                   <Button
-                    className="shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white"
-                    onClick={finishDrawing}
+                    variant="secondary"
+                    className="bg-white/95 backdrop-blur shadow-sm font-semibold border-slate-200"
+                    onClick={startDrawing}
                   >
-                    <Check className="w-4 h-4 mr-2" /> Finalizar Zona
+                    <SquareDashed className="w-4 h-4 mr-2" /> Nova Zona (Geofencing)
                   </Button>
-                  <Button variant="destructive" className="shadow-sm" onClick={cancelDrawing}>
-                    <X className="w-4 h-4 mr-2" /> Cancelar
-                  </Button>
-                </>
-              )}
-            </div>
+                ) : (
+                  <>
+                    <Button
+                      className="shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white"
+                      onClick={finishDrawing}
+                    >
+                      <Check className="w-4 h-4 mr-2" /> Finalizar Zona
+                    </Button>
+                    <Button variant="destructive" className="shadow-sm" onClick={cancelDrawing}>
+                      <X className="w-4 h-4 mr-2" /> Cancelar
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
 
             <Popover>
               <PopoverTrigger asChild>
@@ -513,18 +589,21 @@ export default function CockpitPage() {
                       label: 'Veículos Ativos',
                       icon: Activity,
                       color: 'text-blue-500',
+                      disabled: viewMode === 'routes',
                     },
                     {
                       key: 'stops',
-                      label: 'Pontos de Parada',
+                      label: 'Pontos Genéricos',
                       icon: MapPin,
                       color: 'text-emerald-500',
+                      disabled: viewMode === 'routes',
                     },
                     {
                       key: 'maintenance',
                       label: 'Alertas de Manutenção',
                       icon: Wrench,
                       color: 'text-amber-500',
+                      disabled: viewMode === 'routes',
                     },
                     {
                       key: 'traffic',
@@ -534,12 +613,16 @@ export default function CockpitPage() {
                     },
                   ].map((l) => (
                     <div key={l.key} className="flex items-center justify-between">
-                      <Label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700">
-                        <l.icon className={`w-4 h-4 ${l.color}`} /> {l.label}
+                      <Label
+                        className={`flex items-center gap-2 text-sm font-medium ${l.disabled ? 'text-slate-400' : 'text-slate-700 cursor-pointer'}`}
+                      >
+                        <l.icon className={`w-4 h-4 ${l.disabled ? 'text-slate-300' : l.color}`} />{' '}
+                        {l.label}
                       </Label>
                       <Switch
                         checked={(layers as any)[l.key]}
                         onCheckedChange={(v) => setLayers((p) => ({ ...p, [l.key]: v }))}
+                        disabled={l.disabled}
                       />
                     </div>
                   ))}
@@ -563,6 +646,122 @@ export default function CockpitPage() {
                     <p className="text-slate-800 font-medium">{alert.msg}</p>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {viewMode === 'routes' && (
+              <div className="absolute top-4 left-4 z-20 w-80 max-h-[85%] flex flex-col animate-slide-right pointer-events-none">
+                <Card className="flex flex-col bg-white/95 backdrop-blur shadow-lg border-slate-200 h-full pointer-events-auto">
+                  <CardHeader className="pb-3 border-b">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <RouteIcon className="w-4 h-4 text-blue-600" /> Editor de Trajetos
+                    </CardTitle>
+                    <CardDescription className="text-xs">
+                      Selecione a rota e clique no mapa para adicionar pontos de coleta.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs font-semibold">Rota Ativa</Label>
+                      <Select
+                        value={editingRoute?.id || ''}
+                        onValueChange={(id) => {
+                          const r = dbRoutes.find((x) => x.id === id)
+                          if (r) setEditingRoute({ ...r, checkpoints: r.checkpoints || [] })
+                        }}
+                      >
+                        <SelectTrigger className="h-9">
+                          <SelectValue placeholder="Selecione uma rota..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {dbRoutes.map((r) => (
+                            <SelectItem key={r.id} value={r.id}>
+                              {r.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {editingRoute && (
+                      <div className="space-y-3 pt-2">
+                        <div className="flex items-center justify-between border-b pb-2">
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                            Sequência de Paradas ({editingRoute.checkpoints.length})
+                          </p>
+                        </div>
+                        {editingRoute.checkpoints.length === 0 ? (
+                          <div className="text-sm text-slate-400 border border-dashed rounded-lg p-6 text-center bg-slate-50/50">
+                            <MapPin className="w-6 h-6 mx-auto mb-2 opacity-50" />
+                            Clique em qualquer lugar do mapa para adicionar o primeiro ponto de
+                            coleta.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {editingRoute.checkpoints.map((cp, idx) => (
+                              <div
+                                key={cp.id}
+                                className="flex items-center gap-2 bg-slate-50 border p-1.5 rounded-md text-xs shadow-sm transition-colors hover:border-blue-300 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500"
+                              >
+                                <div className="bg-blue-100 text-blue-700 w-6 h-6 shrink-0 rounded-full flex items-center justify-center font-bold text-[11px]">
+                                  {idx + 1}
+                                </div>
+                                <Input
+                                  value={cp.name}
+                                  onChange={(e) => {
+                                    setEditingRoute((prev) =>
+                                      prev
+                                        ? {
+                                            ...prev,
+                                            checkpoints: prev.checkpoints.map((x) =>
+                                              x.id === cp.id ? { ...x, name: e.target.value } : x,
+                                            ),
+                                          }
+                                        : null,
+                                    )
+                                  }}
+                                  className="h-7 text-xs px-2 flex-1 border-transparent hover:border-slate-200 focus-visible:border-blue-500 focus-visible:ring-0 shadow-none bg-transparent"
+                                />
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 text-slate-400 hover:text-red-600 hover:bg-red-50 shrink-0"
+                                  title="Remover parada"
+                                  onClick={() =>
+                                    setEditingRoute((prev) =>
+                                      prev
+                                        ? {
+                                            ...prev,
+                                            checkpoints: prev.checkpoints.filter(
+                                              (x) => x.id !== cp.id,
+                                            ),
+                                          }
+                                        : null,
+                                    )
+                                  }
+                                >
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <Button
+                          className="w-full mt-6 shadow-sm"
+                          onClick={async () => {
+                            await api.routes.update(editingRoute.id, {
+                              checkpoints: editingRoute.checkpoints,
+                            })
+                            toast.success('Trajeto e pontos de coleta salvos com sucesso!')
+                            setDbRoutes(await api.routes.list())
+                          }}
+                        >
+                          <Check className="w-4 h-4 mr-2" /> Salvar Alterações
+                        </Button>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
               </div>
             )}
 

@@ -17,12 +17,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
+import { useNavigate } from 'react-router-dom'
 
 export default function RoutesPage() {
   const [routes, setRoutes] = useState<Route[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [formData, setFormData] = useState<Partial<Route>>({})
+  const navigate = useNavigate()
 
   // AI Optimization state
   const [optimizingRoute, setOptimizingRoute] = useState<Route | null>(null)
@@ -63,15 +65,56 @@ export default function RoutesPage() {
   }
 
   const openModal = (route?: Route) => {
-    setFormData(route || { status: 'Agendada', stops: 0, whatsappAlerts: false, alertRadius: 500 })
+    setFormData(
+      route
+        ? JSON.parse(JSON.stringify(route))
+        : {
+            status: 'Agendada',
+            stops: 0,
+            whatsappAlerts: false,
+            alertRadius: 500,
+            checkpoints: [],
+          },
+    )
     setIsModalOpen(true)
+  }
+
+  const addCp = () => {
+    setFormData((prev) => ({
+      ...prev,
+      checkpoints: [
+        ...(prev.checkpoints || []),
+        {
+          id: Math.random().toString(),
+          name: `Ponto ${(prev.checkpoints?.length || 0) + 1}`,
+          lat: -23.561414,
+          lng: -46.655881,
+          radius: 500,
+        },
+      ],
+    }))
+  }
+
+  const updateCp = (idx: number, field: string, value: any) => {
+    setFormData((prev) => {
+      const cps = [...(prev.checkpoints || [])]
+      cps[idx] = { ...cps[idx], [field]: value }
+      return { ...prev, checkpoints: cps }
+    })
+  }
+
+  const removeCp = (idx: number) => {
+    setFormData((prev) => {
+      const cps = [...(prev.checkpoints || [])]
+      cps.splice(idx, 1)
+      return { ...prev, checkpoints: cps }
+    })
   }
 
   const openOptimize = (route: Route) => {
     setOptimizingRoute(route)
     setAiSuggestion(null)
     setAiAnalyzing(true)
-    // Simulate AI delay
     setTimeout(() => {
       setAiAnalyzing(false)
       setAiSuggestion({
@@ -103,9 +146,14 @@ export default function RoutesPage() {
             Mapeamento de percursos escolares e otimização por IA.
           </p>
         </div>
-        <Button onClick={() => openModal()}>
-          <Plus className="mr-2 h-4 w-4" /> Criar Rota
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => navigate('/ops/cockpit')}>
+            <MapPin className="mr-2 h-4 w-4" /> Mapa de Rotas
+          </Button>
+          <Button onClick={() => openModal()}>
+            <Plus className="mr-2 h-4 w-4" /> Criar Rota
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -161,10 +209,8 @@ export default function RoutesPage() {
               <CardContent className="flex-1 flex flex-col justify-between">
                 <div className="space-y-2 mt-2">
                   <div className="flex items-center text-sm text-slate-600 gap-2">
-                    <MapPin className="h-4 w-4 text-green-500" /> {r.startPoint || 'Não definido'}
-                  </div>
-                  <div className="flex items-center text-sm text-slate-600 gap-2">
-                    <MapPin className="h-4 w-4 text-red-500" /> {r.endPoint || 'Não definido'}
+                    <MapPin className="h-4 w-4 text-blue-500" /> {r.checkpoints?.length || 0}{' '}
+                    paradas (pontos de coleta)
                   </div>
                 </div>
                 <div className="mt-4 flex items-center justify-between border-t pt-4">
@@ -238,35 +284,20 @@ export default function RoutesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Standard Form Modal omitted body to save space but kept essential structure */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{formData.id ? 'Editar Rota' : 'Nova Rota'}</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
+          <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
             <div className="space-y-2">
-              <Label>Nome</Label>
+              <Label>Nome da Rota</Label>
               <Input
                 value={formData.name || ''}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Ponto Inicial</Label>
-                <Input
-                  value={formData.startPoint || ''}
-                  onChange={(e) => setFormData({ ...formData, startPoint: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Ponto Final</Label>
-                <Input
-                  value={formData.endPoint || ''}
-                  onChange={(e) => setFormData({ ...formData, endPoint: e.target.value })}
-                />
-              </div>
               <div className="space-y-2">
                 <Label>Placa Veículo</Label>
                 <Input
@@ -282,10 +313,76 @@ export default function RoutesPage() {
                 />
               </div>
             </div>
+
+            <div className="mt-4 pt-4 border-t space-y-4">
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-semibold">Pontos de Coleta (Paradas)</h4>
+                  <span className="text-[10px] text-muted-foreground uppercase bg-slate-100 px-2 py-0.5 rounded-full font-bold tracking-wider">
+                    {formData.checkpoints?.length || 0} Paradas
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Insira as coordenadas manualmente ou use a aba de Edição Visual no mapa do
+                  Cockpit.
+                </p>
+              </div>
+              <div className="space-y-2">
+                {(formData.checkpoints || []).map((cp, idx) => (
+                  <div
+                    key={cp.id || idx}
+                    className="flex gap-2 items-center bg-slate-50 p-2 rounded border transition-colors focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400"
+                  >
+                    <span className="font-bold text-slate-500 text-xs w-4 text-center">
+                      {idx + 1}
+                    </span>
+                    <Input
+                      value={cp.name}
+                      onChange={(e) => updateCp(idx, 'name', e.target.value)}
+                      placeholder="Nome da Parada"
+                      className="h-8 text-xs flex-1"
+                    />
+                    <Input
+                      value={cp.lat}
+                      onChange={(e) => updateCp(idx, 'lat', parseFloat(e.target.value))}
+                      placeholder="Lat"
+                      type="number"
+                      step="any"
+                      className="h-8 w-24 text-xs font-mono"
+                    />
+                    <Input
+                      value={cp.lng}
+                      onChange={(e) => updateCp(idx, 'lng', parseFloat(e.target.value))}
+                      placeholder="Lng"
+                      type="number"
+                      step="any"
+                      className="h-8 w-24 text-xs font-mono"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeCp(idx)}
+                      className="h-8 w-8 text-red-500 shrink-0 hover:bg-red-50 hover:text-red-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={addCp}
+                  className="w-full text-xs border-dashed text-slate-500 hover:text-slate-900 mt-2"
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Adicionar Ponto de Coleta
+                </Button>
+              </div>
+            </div>
+
             <div className="mt-4 pt-4 border-t space-y-4">
               <h4 className="text-sm font-semibold">Geofencing</h4>
               <div className="flex justify-between items-center bg-slate-50 p-3 rounded border">
-                <Label>Alertas WhatsApp (Aproximação)</Label>
+                <Label className="cursor-pointer">Alertas WhatsApp (Aproximação)</Label>
                 <Switch
                   checked={!!formData.whatsappAlerts}
                   onCheckedChange={(v) => setFormData({ ...formData, whatsappAlerts: v })}
@@ -294,7 +391,7 @@ export default function RoutesPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={handleSave}>Salvar</Button>
+            <Button onClick={handleSave}>Salvar Rota e Pontos</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
