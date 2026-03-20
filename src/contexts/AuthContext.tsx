@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           'action:edit',
           'page:dashboard:executive',
         ]
-        let redirectPath = '/'
+        let redirectPath = '/ops/cockpit' // Redirect admin to Cockpit Dashboard
 
         if (email.includes('parent')) {
           userRole = 'parent'

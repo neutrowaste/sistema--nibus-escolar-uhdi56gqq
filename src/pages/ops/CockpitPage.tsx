@@ -10,11 +10,30 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
-import { Activity, MapPin, Play, Pause, History, AlertCircle } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import {
+  Activity,
+  MapPin,
+  Play,
+  Pause,
+  History,
+  AlertCircle,
+  Layers,
+  Wrench,
+  TrafficCone,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
 
-// Define window interface to avoid TS errors
 declare global {
   interface Window {
     google: any
@@ -27,35 +46,45 @@ export default function CockpitPage() {
     { id: number; msg: string; time: string; type: 'alert' | 'warning' }[]
   >([])
 
-  // Maps specific state & refs
+  const [layers, setLayers] = useState({
+    buses: true,
+    stops: true,
+    maintenance: true,
+    traffic: false,
+  })
+  const [zoneModal, setZoneModal] = useState({ open: false, type: 'interest', name: '' })
+  const [pendingZone, setPendingZone] = useState<any>(null)
+
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<any>(null)
   const polylineInstance = useRef<any>(null)
   const busMarkerInstance = useRef<any>(null)
+  const alertBadgeInstance = useRef<any>(null)
   const infoWindowInstance = useRef<any>(null)
+
+  const drawingManagerInstance = useRef<any>(null)
+  const trafficLayerInstance = useRef<any>(null)
   const alertMarkersRef = useRef<any[]>([])
+  const stopsMarkersRef = useRef<any[]>([])
+  const maintenanceMarkersRef = useRef<any[]>([])
 
   const routePathRef = useRef<any[]>([])
   const [pathLength, setPathLength] = useState(0)
 
-  // History State
   const [isPlaying, setIsPlaying] = useState(false)
   const [playbackProgress, setPlaybackProgress] = useState(0)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
 
-  // Live state refs
   const liveProgressRef = useRef(0)
   const lastAlertRef = useRef({ deviation: 0, stop: 0 })
   const animationFrameRef = useRef<number | null>(null)
+  const pulsePhaseRef = useRef(0)
 
   const loadGoogleMaps = useCallback(() => {
     return new Promise<void>((resolve) => {
-      if (window.google?.maps) {
-        resolve()
-        return
-      }
+      if (window.google?.maps) return resolve()
       const script = document.createElement('script')
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}&libraries=geometry`
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}&libraries=geometry,drawing`
       script.async = true
       script.defer = true
       script.onload = () => resolve()
@@ -89,6 +118,7 @@ export default function CockpitPage() {
 
     busMarkerInstance.current = new window.google.maps.Marker({
       map: mapInstance.current,
+      zIndex: 100,
       icon: {
         path: window.google.maps.SymbolPath.CIRCLE,
         scale: 8,
@@ -98,59 +128,124 @@ export default function CockpitPage() {
         strokeWeight: 3,
       },
       title: 'Veículo Escolar',
-      zIndex: 100,
+    })
+
+    alertBadgeInstance.current = new window.google.maps.Marker({
+      map: null,
+      zIndex: 101,
+      title: 'Alerta Crítico',
+      icon: {
+        path: 'M0,22 L12,1 L24,22 Z',
+        fillColor: '#f59e0b',
+        fillOpacity: 1,
+        strokeWeight: 2,
+        strokeColor: '#fff',
+        scale: 0.8,
+        anchor: new window.google.maps.Point(12, 11),
+      },
     })
 
     infoWindowInstance.current = new window.google.maps.InfoWindow({
-      content: `
-        <div style="padding: 4px; font-family: sans-serif;">
-          <h3 style="font-weight: bold; font-size: 14px; margin:0 0 4px 0;">Veículo ABC-1234</h3>
-          <p style="font-size: 12px; color: #64748b; margin:0;">Motorista: João Mendes</p>
-          <p style="font-size: 12px; color: #64748b; margin:0;">Rota: Rota Norte</p>
-          <p style="font-size: 12px; color: #64748b; margin:0;">Alunos: 18/20</p>
-          <span style="display:inline-block; margin-top:6px; background:#dbeafe; color:#1e40af; font-size:10px; padding:2px 6px; border-radius:4px; border: 1px solid #bfdbfe;">Em Rota</span>
-        </div>
-      `,
+      content: `<div style="padding: 4px; font-family: sans-serif;"><h3 style="font-weight: bold; font-size: 14px; margin:0 0 4px 0;">Veículo ABC-1234</h3><p style="font-size: 12px; color: #64748b; margin:0;">Motorista: João Mendes</p><p style="font-size: 12px; color: #64748b; margin:0;">Rota: Rota Norte</p><p style="font-size: 12px; color: #64748b; margin:0;">Alunos: 18/20</p><span style="display:inline-block; margin-top:6px; background:#dbeafe; color:#1e40af; font-size:10px; padding:2px 6px; border-radius:4px; border: 1px solid #bfdbfe;">Em Rota</span></div>`,
     })
 
-    busMarkerInstance.current.addListener('click', () => {
-      infoWindowInstance.current.open(mapInstance.current, busMarkerInstance.current)
+    busMarkerInstance.current.addListener('click', () =>
+      infoWindowInstance.current.open(mapInstance.current, busMarkerInstance.current),
+    )
+
+    trafficLayerInstance.current = new window.google.maps.TrafficLayer()
+
+    drawingManagerInstance.current = new window.google.maps.drawing.DrawingManager({
+      drawingMode: null,
+      drawingControl: true,
+      drawingControlOptions: {
+        position: window.google.maps.ControlPosition.TOP_CENTER,
+        drawingModes: ['polygon'],
+      },
+      polygonOptions: {
+        fillColor: '#3b82f6',
+        fillOpacity: 0.3,
+        strokeWeight: 2,
+        clickable: true,
+        editable: false,
+        zIndex: 1,
+      },
     })
+    drawingManagerInstance.current.setMap(mapInstance.current)
+
+    window.google.maps.event.addListener(
+      drawingManagerInstance.current,
+      'overlaycomplete',
+      (e: any) => {
+        if (e.type === 'polygon') {
+          setPendingZone(e.overlay)
+          setZoneModal((z) => ({ ...z, open: true }))
+          drawingManagerInstance.current.setDrawingMode(null)
+        }
+      },
+    )
+
+    const createStatic = (lat: number, lng: number, path: any, color: string, title: string) =>
+      new window.google.maps.Marker({
+        position: { lat, lng },
+        map: null,
+        title,
+        icon: {
+          path,
+          scale: 5,
+          fillColor: color,
+          fillOpacity: 1,
+          strokeWeight: 1,
+          strokeColor: '#fff',
+        },
+      })
+
+    stopsMarkersRef.current = [
+      createStatic(
+        -23.565414,
+        -46.654881,
+        window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+        '#10b981',
+        'Parada Norte',
+      ),
+      createStatic(
+        -23.578416,
+        -46.655633,
+        window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+        '#10b981',
+        'Parada Sul',
+      ),
+    ]
+    maintenanceMarkersRef.current = [
+      createStatic(
+        -23.581416,
+        -46.651633,
+        window.google.maps.SymbolPath.CIRCLE,
+        '#f59e0b',
+        'Alerta de Manutenção (Oficina)',
+      ),
+    ]
   }, [])
 
   const fetchDirectionsAndSnap = async (waypoints: { lat: number; lng: number }[]) => {
     if (!window.google) return []
     return new Promise<any[]>((resolve) => {
       const directionsService = new window.google.maps.DirectionsService()
-      const origin = waypoints[0]
-      const destination = waypoints[waypoints.length - 1]
-      const waypts = waypoints.slice(1, -1).map((p) => ({ location: p, stopover: true }))
-
       directionsService.route(
         {
-          origin,
-          destination,
-          waypoints: waypts,
+          origin: waypoints[0],
+          destination: waypoints[waypoints.length - 1],
+          waypoints: waypoints.slice(1, -1).map((p) => ({ location: p, stopover: true })),
           travelMode: window.google.maps.TravelMode.DRIVING,
         },
         (result: any, status: string) => {
-          if (status === 'OK' && result) {
-            resolve(result.routes[0].overview_path)
-          } else {
-            // Fallback to straight lines if API key is missing/restricted
-            resolve(waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng)))
-          }
+          if (status === 'OK' && result) resolve(result.routes[0].overview_path)
+          else resolve(waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng)))
         },
       )
     })
   }
 
-  const clearAlertsMap = () => {
-    alertMarkersRef.current.forEach((m) => m.setMap(null))
-    alertMarkersRef.current = []
-  }
-
-  // Load Map & Initial Data
   useEffect(() => {
     loadGoogleMaps().then(() => {
       initMap()
@@ -161,15 +256,22 @@ export default function CockpitPage() {
     }
   }, [loadGoogleMaps, initMap])
 
-  // Reload route when viewMode changes
   useEffect(() => {
-    if (mapInstance.current) {
-      loadRouteData()
-    }
+    if (!mapInstance.current) return
+    busMarkerInstance.current?.setMap(layers.buses ? mapInstance.current : null)
+    alertBadgeInstance.current?.setMap(layers.buses ? mapInstance.current : null)
+    trafficLayerInstance.current?.setMap(layers.traffic ? mapInstance.current : null)
+    stopsMarkersRef.current.forEach((m) => m.setMap(layers.stops ? mapInstance.current : null))
+    maintenanceMarkersRef.current.forEach((m) =>
+      m.setMap(layers.maintenance ? mapInstance.current : null),
+    )
+  }, [layers])
+
+  useEffect(() => {
+    if (mapInstance.current) loadRouteData()
   }, [viewMode, selectedDate])
 
   const loadRouteData = async () => {
-    // Generate some waypoints depending on mode to show different paths
     const waypoints =
       viewMode === 'live'
         ? [
@@ -190,11 +292,11 @@ export default function CockpitPage() {
       path.forEach((p: any) => bounds.extend(p))
       mapInstance.current.fitBounds(bounds)
 
-      // Reset animations
       if (viewMode === 'live') {
         liveProgressRef.current = 0
         setLiveAlerts([])
-        clearAlertsMap()
+        alertMarkersRef.current.forEach((m) => m.setMap(null))
+        alertMarkersRef.current = []
         startLiveSimulation()
       } else {
         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
@@ -207,13 +309,13 @@ export default function CockpitPage() {
   const updateBusPosition = (index: number) => {
     const path = routePathRef.current
     if (!path || path.length === 0 || !busMarkerInstance.current) return
-    const safeIndex = Math.min(Math.max(0, Math.floor(index)), path.length - 1)
-    busMarkerInstance.current.setPosition(path[safeIndex])
+    busMarkerInstance.current.setPosition(
+      path[Math.min(Math.max(0, Math.floor(index)), path.length - 1)],
+    )
   }
 
   const startLiveSimulation = () => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
-
     let lastTime = Date.now()
 
     const animate = () => {
@@ -222,65 +324,83 @@ export default function CockpitPage() {
 
       const now = Date.now()
       if (now - lastTime > 100) {
-        // Update every 100ms
-        liveProgressRef.current += 0.5 // Speed of simulation
+        liveProgressRef.current += 0.5
         if (liveProgressRef.current >= path.length) liveProgressRef.current = 0
 
-        updateBusPosition(liveProgressRef.current)
-
-        // Random Alerts Simulation
         const pRatio = liveProgressRef.current / path.length
-        if (pRatio > 0.45 && pRatio < 0.55 && now - lastAlertRef.current.deviation > 30000) {
+        const isSpeeding = pRatio > 0.4 && pRatio < 0.45
+        const isDeviating = pRatio > 0.5 && pRatio < 0.55
+        const hasAlert = isSpeeding || isDeviating
+
+        if (hasAlert && now - lastAlertRef.current.deviation > 30000) {
           const pos = path[Math.floor(liveProgressRef.current)]
-          addMapAlert(pos, 'Desvio de Rota Crítico Detectado')
+          const title = isSpeeding ? 'Excesso de Velocidade Detectado' : 'Desvio de Rota Crítico'
+          if (window.google) {
+            const marker = new window.google.maps.Marker({
+              position: pos,
+              map: mapInstance.current,
+              icon: {
+                path: window.google.maps.SymbolPath.CIRCLE,
+                scale: 5,
+                fillColor: '#ef4444',
+                fillOpacity: 0.5,
+                strokeColor: '#ffffff',
+                strokeWeight: 1,
+              },
+              title,
+            })
+            alertMarkersRef.current.push(marker)
+          }
           setLiveAlerts((la) =>
             [
               {
                 id: now,
-                msg: 'Desvio de Rota Crítico: Veículo ABC-1234',
+                msg: `${title}: Veículo ABC-1234`,
                 time: new Date().toLocaleTimeString(),
                 type: 'alert',
               },
               ...la,
             ].slice(0, 5),
           )
-          toast.error('Alerta de Desvio Detectado!')
+          toast.error(`Alerta: ${title}!`)
           lastAlertRef.current.deviation = now
         }
 
+        pulsePhaseRef.current += 0.3
+        let scale = 8,
+          color = '#2563eb'
+
+        if (isSpeeding) {
+          scale = 8 + Math.sin(pulsePhaseRef.current) * 3
+          color = '#ef4444'
+          alertBadgeInstance.current.setMap(null)
+        } else if (isDeviating) {
+          color = '#f59e0b'
+          const pos = path[Math.floor(liveProgressRef.current)]
+          alertBadgeInstance.current.setPosition({ lat: pos.lat + 0.0003, lng: pos.lng + 0.0003 })
+          if (layers.buses) alertBadgeInstance.current.setMap(mapInstance.current)
+        } else {
+          alertBadgeInstance.current.setMap(null)
+        }
+
+        busMarkerInstance.current.setIcon({
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale,
+          fillColor: color,
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 3,
+        })
+        updateBusPosition(liveProgressRef.current)
         lastTime = now
       }
       animationFrameRef.current = requestAnimationFrame(animate)
     }
-
     animate()
   }
 
-  const addMapAlert = (position: any, title: string) => {
-    if (!window.google) return
-    const marker = new window.google.maps.Marker({
-      position,
-      map: mapInstance.current,
-      icon: {
-        path: window.google.maps.SymbolPath.CIRCLE,
-        scale: 6,
-        fillColor: '#ef4444',
-        fillOpacity: 1,
-        strokeColor: '#ffffff',
-        strokeWeight: 2,
-      },
-      title,
-    })
-    alertMarkersRef.current.push(marker)
-  }
-
-  // Handle Playback Slider & Auto-play
   useEffect(() => {
-    if (viewMode === 'live') return
-
-    const path = routePathRef.current
-    if (!path || path.length === 0) return
-
+    if (viewMode === 'live' || !routePathRef.current || routePathRef.current.length === 0) return
     if (isPlaying) {
       const interval = setInterval(() => {
         setPlaybackProgress((prev) => {
@@ -296,11 +416,31 @@ export default function CockpitPage() {
   }, [isPlaying, viewMode, pathLength])
 
   useEffect(() => {
-    if (viewMode === 'history' && pathLength > 0) {
-      const index = (playbackProgress / 100) * (pathLength - 1)
-      updateBusPosition(index)
-    }
+    if (viewMode === 'history' && pathLength > 0)
+      updateBusPosition((playbackProgress / 100) * (pathLength - 1))
   }, [playbackProgress, viewMode, pathLength])
+
+  const saveZone = () => {
+    if (!pendingZone || !window.google) return
+    const color = zoneModal.type === 'risk' ? '#ef4444' : '#10b981'
+    pendingZone.setOptions({ fillColor: color, strokeColor: color })
+    const infoWindow = new window.google.maps.InfoWindow({
+      content: `<div style="padding: 4px; font-family: sans-serif;"><strong style="font-size: 14px;">${zoneModal.name || 'Nova Zona'}</strong><br/><span style="font-size: 12px; color: #64748b;">Zona de ${zoneModal.type === 'risk' ? 'Risco' : 'Interesse'}</span></div>`,
+    })
+    pendingZone.addListener('click', (e: any) => {
+      infoWindow.setPosition(e.latLng)
+      infoWindow.open(mapInstance.current)
+    })
+    toast.success(`Zona salva com sucesso!`)
+    setZoneModal({ ...zoneModal, open: false, name: '' })
+    setPendingZone(null)
+  }
+
+  const cancelZone = () => {
+    if (pendingZone) pendingZone.setMap(null)
+    setZoneModal({ ...zoneModal, open: false })
+    setPendingZone(null)
+  }
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col lg:flex-row space-y-4 lg:space-y-0 lg:space-x-4 animate-fade-in">
@@ -325,9 +465,7 @@ export default function CockpitPage() {
         </div>
 
         <Card className="flex-1 relative overflow-hidden border-2 border-slate-200 shadow-inner rounded-xl">
-          {/* Map Container */}
           <div ref={mapRef} className="absolute inset-0 w-full h-full bg-slate-100" />
-
           {!window.google && (
             <div className="absolute inset-0 flex items-center justify-center bg-slate-100/80 backdrop-blur-sm z-10">
               <div className="flex flex-col items-center text-slate-500">
@@ -340,11 +478,50 @@ export default function CockpitPage() {
       </div>
 
       <div className="w-full lg:w-80 flex flex-col gap-4">
+        <Card className="p-4">
+          <h3 className="font-semibold flex items-center text-slate-800 mb-4">
+            <Layers className="w-4 h-4 mr-2 text-primary" /> Camadas do Mapa
+          </h3>
+          <div className="space-y-3">
+            {[
+              {
+                key: 'buses',
+                label: 'Veículos em Movimento',
+                icon: Activity,
+                color: 'text-blue-500',
+              },
+              { key: 'stops', label: 'Pontos de Parada', icon: MapPin, color: 'text-emerald-500' },
+              {
+                key: 'maintenance',
+                label: 'Alertas de Manutenção',
+                icon: Wrench,
+                color: 'text-amber-500',
+              },
+              {
+                key: 'traffic',
+                label: 'Trânsito em Tempo Real',
+                icon: TrafficCone,
+                color: 'text-orange-500',
+              },
+            ].map((l) => (
+              <div key={l.key} className="flex items-center justify-between">
+                <Label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700">
+                  <l.icon className={`w-4 h-4 ${l.color}`} /> {l.label}
+                </Label>
+                <Switch
+                  checked={(layers as any)[l.key]}
+                  onCheckedChange={(v) => setLayers((prev) => ({ ...prev, [l.key]: v }))}
+                />
+              </div>
+            ))}
+          </div>
+        </Card>
+
         {viewMode === 'live' ? (
           <Card className="p-0 flex-1 flex flex-col overflow-hidden">
             <div className="p-4 border-b bg-slate-50">
               <h3 className="font-semibold flex items-center text-slate-800">
-                <Activity className="w-4 h-4 mr-2 text-blue-500" /> Feed de Alertas (Tempo Real)
+                <Activity className="w-4 h-4 mr-2 text-blue-500" /> Feed de Alertas
               </h3>
             </div>
             <div className="flex-1 overflow-auto p-4 space-y-3">
@@ -432,6 +609,50 @@ export default function CockpitPage() {
           </Card>
         )}
       </div>
+
+      <Dialog
+        open={zoneModal.open}
+        onOpenChange={(o) => {
+          if (!o) cancelZone()
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Salvar Zona Geográfica</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Nome da Zona</Label>
+              <Input
+                value={zoneModal.name}
+                onChange={(e) => setZoneModal((z) => ({ ...z, name: e.target.value }))}
+                placeholder="Ex: Área Escolar 1"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo de Zona</Label>
+              <Select
+                value={zoneModal.type}
+                onValueChange={(v: any) => setZoneModal((z) => ({ ...z, type: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="interest">Zona de Interesse (Verde)</SelectItem>
+                  <SelectItem value="risk">Zona de Risco (Vermelho)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={cancelZone}>
+              Cancelar
+            </Button>
+            <Button onClick={saveZone}>Salvar Zona</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
