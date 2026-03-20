@@ -163,7 +163,7 @@ export default function CockpitPage() {
     mapInstance.current = new window.google.maps.Map(mapRef.current, {
       center: { lat: -23.561414, lng: -46.655881 },
       zoom: 14,
-      mapId: '8f4bdbb',
+      mapId: 'DEMO_MAP_ID', // Changed from arbitrary map ID to DEMO_MAP_ID to avoid ApiProjectMapError
       disableDefaultUI: true,
       zoomControl: true,
     })
