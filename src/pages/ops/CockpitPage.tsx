@@ -77,7 +77,10 @@ export default function CockpitPage() {
   const polygonsRef = useRef<any[]>([])
   const stopsMarkersRef = useRef<any[]>([])
   const maintenanceMarkersRef = useRef<any[]>([])
+
   const routePathRef = useRef<any[]>([])
+  const routeDistancesRef = useRef<number[]>([])
+  const totalDistanceRef = useRef<number>(0)
 
   const [pathLength, setPathLength] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -113,8 +116,20 @@ export default function CockpitPage() {
       map: mapInstance.current,
       path: [],
       strokeColor: '#3b82f6',
-      strokeOpacity: 0.8,
-      strokeWeight: 6,
+      strokeOpacity: 0,
+      icons: [
+        {
+          icon: {
+            path: 'M 0,-1 0,1',
+            strokeOpacity: 0.8,
+            scale: 3,
+            strokeColor: '#3b82f6',
+            strokeWeight: 4,
+          },
+          offset: '0',
+          repeat: '20px',
+        },
+      ],
       zIndex: 50,
     })
 
@@ -197,39 +212,41 @@ export default function CockpitPage() {
     setZoneModal({ open: true, type: 'interest', name: '' })
   }
 
+  const getPositionAtDistance = useCallback((targetDist: number, path: any[], dists: number[]) => {
+    if (!path || path.length === 0 || !dists || dists.length === 0) return null
+    if (path.length === 1) return { currentLatLng: path[0], heading: lastHeadingRef.current }
+
+    let idx = 0
+    while (idx < dists.length - 1 && dists[idx + 1] < targetDist) {
+      idx++
+    }
+
+    const getLatLng = (p: any) =>
+      typeof p.lat === 'function' ? p : new window.google.maps.LatLng(p.lat, p.lng)
+    const startPoint = getLatLng(path[idx])
+    const endPoint = getLatLng(path[Math.min(idx + 1, path.length - 1)])
+
+    let currentLatLng = startPoint
+    let heading = lastHeadingRef.current
+
+    if (startPoint.lat() !== endPoint.lat() || startPoint.lng() !== endPoint.lng()) {
+      const segmentDist = dists[idx + 1] - dists[idx]
+      const fraction = segmentDist > 0 ? (targetDist - dists[idx]) / segmentDist : 0
+      currentLatLng = window.google.maps.geometry.spherical.interpolate(
+        startPoint,
+        endPoint,
+        fraction,
+      )
+      heading = window.google.maps.geometry.spherical.computeHeading(startPoint, endPoint)
+      lastHeadingRef.current = heading
+    }
+
+    return { currentLatLng, heading }
+  }, [])
+
   const updateBusPosition = useCallback(
-    (index: number, isAlert: boolean = false, speed: string = '45 km/h') => {
-      const path = routePathRef.current
-      if (!path || path.length === 0 || !busMarkerInstance.current || !window.google?.maps) return
-
-      const floorIdx = Math.floor(index)
-      const ceilIdx = Math.min(floorIdx + 1, path.length - 1)
-      const currentPos = path[floorIdx]
-      const nextPos = path[ceilIdx]
-
-      const getLatLng = (p: any) =>
-        typeof p.lat === 'function' ? p : new window.google.maps.LatLng(p.lat, p.lng)
-
-      let heading = lastHeadingRef.current
-      let currentLatLng = getLatLng(currentPos)
-
-      if (window.google.maps.geometry?.spherical && floorIdx !== ceilIdx) {
-        const nextLatLng = getLatLng(nextPos)
-
-        if (currentLatLng.lat() !== nextLatLng.lat() || currentLatLng.lng() !== nextLatLng.lng()) {
-          heading = window.google.maps.geometry.spherical.computeHeading(currentLatLng, nextLatLng)
-          lastHeadingRef.current = heading
-        }
-
-        const fraction = index - floorIdx
-        if (fraction > 0) {
-          currentLatLng = window.google.maps.geometry.spherical.interpolate(
-            currentLatLng,
-            nextLatLng,
-            fraction,
-          )
-        }
-      }
+    (currentLatLng: any, heading: number, isAlert: boolean = false, speed: string = '45 km/h') => {
+      if (!busMarkerInstance.current || !window.google?.maps) return
 
       const color = isAlert ? '#ef4444' : '#eab308' // Default school bus yellow
       const textColor = isAlert ? 'white' : '#1e293b'
@@ -239,28 +256,17 @@ export default function CockpitPage() {
       const svg = `
         <div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; transform: translate(0, -50%); z-index: 1000; pointer-events: none;">
           <div style="transform: rotate(${heading}deg); transition: transform 0.1s linear; transform-origin: center center;">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="36" height="36" style="filter: drop-shadow(${shadow});">
-              <!-- Bus Body -->
-              <rect x="25" y="5" width="50" height="90" rx="6" fill="${color}" stroke="#1e293b" stroke-width="2"/>
-              <!-- Front Windshield -->
-              <rect x="28" y="10" width="44" height="12" rx="2" fill="#0f172a"/>
-              <!-- Rear Window -->
-              <rect x="28" y="80" width="44" height="8" rx="1" fill="#0f172a"/>
-              <!-- Side Windows -->
-              <rect x="28" y="28" width="4" height="46" rx="1" fill="#0f172a" opacity="0.8"/>
-              <rect x="68" y="28" width="4" height="46" rx="1" fill="#0f172a" opacity="0.8"/>
-              <!-- Roof Details -->
-              <rect x="40" y="30" width="20" height="12" rx="2" fill="rgba(255,255,255,0.6)"/>
-              <rect x="40" y="55" width="20" height="12" rx="2" fill="rgba(255,255,255,0.6)"/>
-              <!-- Headlights -->
-              <circle cx="32" cy="8" r="3" fill="#fef08a"/>
-              <circle cx="68" cy="8" r="3" fill="#fef08a"/>
-              <!-- Taillights -->
-              <rect x="30" y="92" width="10" height="3" fill="#fca5a5" rx="1"/>
-              <rect x="60" y="92" width="10" height="3" fill="#fca5a5" rx="1"/>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="24" height="24" style="filter: drop-shadow(${shadow});">
+              <rect x="30" y="10" width="40" height="80" rx="4" fill="${color}" stroke="#1e293b" stroke-width="2"/>
+              <rect x="32" y="14" width="36" height="10" rx="1" fill="#0f172a"/>
+              <rect x="32" y="76" width="36" height="6" rx="1" fill="#0f172a"/>
+              <rect x="32" y="28" width="4" height="42" rx="1" fill="#0f172a" opacity="0.8"/>
+              <rect x="64" y="28" width="4" height="42" rx="1" fill="#0f172a" opacity="0.8"/>
+              <rect x="42" y="30" width="16" height="10" rx="2" fill="rgba(255,255,255,0.6)"/>
+              <rect x="42" y="55" width="16" height="10" rx="2" fill="rgba(255,255,255,0.6)"/>
             </svg>
           </div>
-          <div style="margin-top: 4px; background: ${color}; padding: 2px 8px; border-radius: 8px; color: ${textColor}; font-family: monospace; font-size: 11px; font-weight: 900; white-space: nowrap; border: 1.5px solid ${borderColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+          <div style="margin-top: 4px; background: ${color}; padding: 2px 6px; border-radius: 6px; color: ${textColor}; font-family: monospace; font-size: 10px; font-weight: 900; white-space: nowrap; border: 1.5px solid ${borderColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
             ${speed}
           </div>
         </div>
@@ -279,9 +285,26 @@ export default function CockpitPage() {
   )
 
   const drawRoute = useCallback((wp: any[], fitBounds = false) => {
+    const calculateDistances = (pathArray: any[]) => {
+      let d = 0
+      const dists = [0]
+      const getLatLng = (p: any) =>
+        typeof p.lat === 'function' ? p : new window.google.maps.LatLng(p.lat, p.lng)
+      for (let i = 0; i < pathArray.length - 1; i++) {
+        d += window.google.maps.geometry.spherical.computeDistanceBetween(
+          getLatLng(pathArray[i]),
+          getLatLng(pathArray[i + 1]),
+        )
+        dists.push(d)
+      }
+      routeDistancesRef.current = dists
+      totalDistanceRef.current = d
+    }
+
     if (!window.google?.maps?.DirectionsService || wp.length < 2) {
       const path = wp.map((w: any) => new window.google.maps.LatLng(w.lat, w.lng))
       routePathRef.current = path
+      calculateDistances(path)
       setPathLength(path.length)
       if (polylineInstance.current) polylineInstance.current.setPath(path)
       return
@@ -316,6 +339,7 @@ export default function CockpitPage() {
         }
 
         routePathRef.current = path
+        calculateDistances(path)
         setPathLength(path.length)
 
         if (polylineInstance.current) {
@@ -348,13 +372,11 @@ export default function CockpitPage() {
 
     drawRoute(wp, true)
 
-    // Clear old stops markers
     stopsMarkersRef.current.forEach((m) => {
       if (m) m.map = null
     })
     stopsMarkersRef.current = []
 
-    // Create new detailed numbered checkpoints for the waypoints
     if (window.google?.maps?.marker) {
       stopsMarkersRef.current = wp.map((p: any, i: number) => {
         const el = document.createElement('div')
@@ -381,14 +403,11 @@ export default function CockpitPage() {
     if (viewMode === 'live') {
       liveProgressRef.current = 0
       setLiveAlerts([])
-      // Force initial render of the bus to immediately show the car SVG instead of nothing
-      updateBusPosition(0, false, '45 km/h')
     } else {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
       setPlaybackProgress(0)
-      updateBusPosition(0, false, 'Histórico')
     }
-  }, [viewMode, selectedDate, drawRoute, updateBusPosition, layers.stops])
+  }, [viewMode, selectedDate, drawRoute, layers.stops])
 
   const startLiveSimulation = useCallback(() => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
@@ -397,48 +416,55 @@ export default function CockpitPage() {
     const animate = () => {
       if (viewMode !== 'live') return
       const path = routePathRef.current
-      if (path && path.length > 0) {
+      if (path && path.length > 0 && routeDistancesRef.current.length > 0) {
         const now = Date.now()
         if (now - lastTime > 60) {
-          liveProgressRef.current = (liveProgressRef.current + 0.15) % path.length
-          const pos = path[Math.floor(liveProgressRef.current)]
+          const totalDist = totalDistanceRef.current || 1
+          liveProgressRef.current = (liveProgressRef.current + 8) % totalDist
 
-          let inRiskZone = false
-          if (window.google?.maps?.geometry?.poly) {
-            const latLng =
-              typeof pos.lat === 'function' ? pos : new window.google.maps.LatLng(pos.lat, pos.lng)
-            inRiskZone = polygonsRef.current.some(
-              (p) =>
-                p.type === 'risk' &&
-                window.google.maps.geometry.poly.containsLocation(latLng, p.polygon),
-            )
+          const posData = getPositionAtDistance(
+            liveProgressRef.current,
+            path,
+            routeDistancesRef.current,
+          )
+          if (posData) {
+            const { currentLatLng, heading } = posData
+
+            let inRiskZone = false
+            if (window.google?.maps?.geometry?.poly) {
+              inRiskZone = polygonsRef.current.some(
+                (p) =>
+                  p.type === 'risk' &&
+                  window.google.maps.geometry.poly.containsLocation(currentLatLng, p.polygon),
+              )
+            }
+
+            const pRatio = liveProgressRef.current / totalDist
+            const isSpeeding = pRatio > 0.4 && pRatio < 0.45
+            const hasAlert = isSpeeding || inRiskZone
+            const speed = isSpeeding ? '72 km/h' : '45 km/h'
+
+            if (hasAlert && now - lastAlertRef.current > 10000) {
+              const title = isSpeeding ? 'Excesso de Velocidade' : 'Entrada em Zona de Risco'
+              setLiveAlerts((la) =>
+                [
+                  { id: now, msg: `${title} (ABC-1234)`, time: new Date().toLocaleTimeString() },
+                  ...la,
+                ].slice(0, 4),
+              )
+              toast.error(`Alerta Crítico: ${title}!`)
+              lastAlertRef.current = now
+            }
+
+            updateBusPosition(currentLatLng, heading, hasAlert, speed)
           }
-
-          const pRatio = liveProgressRef.current / path.length
-          const isSpeeding = pRatio > 0.4 && pRatio < 0.45
-          const hasAlert = isSpeeding || inRiskZone
-          const speed = isSpeeding ? '72 km/h' : '45 km/h'
-
-          if (hasAlert && now - lastAlertRef.current > 10000) {
-            const title = isSpeeding ? 'Excesso de Velocidade' : 'Entrada em Zona de Risco'
-            setLiveAlerts((la) =>
-              [
-                { id: now, msg: `${title} (ABC-1234)`, time: new Date().toLocaleTimeString() },
-                ...la,
-              ].slice(0, 4),
-            )
-            toast.error(`Alerta Crítico: ${title}!`)
-            lastAlertRef.current = now
-          }
-
-          updateBusPosition(liveProgressRef.current, hasAlert, speed)
           lastTime = now
         }
       }
       animationFrameRef.current = requestAnimationFrame(animate)
     }
     animate()
-  }, [viewMode, updateBusPosition])
+  }, [viewMode, getPositionAtDistance, updateBusPosition])
 
   useEffect(() => {
     if (!isLoaded || loadError) return
@@ -543,9 +569,19 @@ export default function CockpitPage() {
   }, [isPlaying, viewMode])
 
   useEffect(() => {
-    if (viewMode === 'history' && pathLength > 0)
-      updateBusPosition((playbackProgress / 100) * (pathLength - 1), false, 'Histórico')
-  }, [playbackProgress, viewMode, pathLength, updateBusPosition])
+    if (viewMode === 'history' && pathLength > 0 && routeDistancesRef.current.length > 0) {
+      const totalDist = totalDistanceRef.current
+      const targetDist = (playbackProgress / 100) * totalDist
+      const posData = getPositionAtDistance(
+        targetDist,
+        routePathRef.current,
+        routeDistancesRef.current,
+      )
+      if (posData) {
+        updateBusPosition(posData.currentLatLng, posData.heading, false, 'Histórico')
+      }
+    }
+  }, [playbackProgress, viewMode, pathLength, updateBusPosition, getPositionAtDistance])
 
   const saveZone = () => {
     if (!pendingZone) return
