@@ -37,7 +37,11 @@ export default function RoutesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [formData, setFormData] = useState<Partial<Route>>({})
-  const [routeStats, setRouteStats] = useState<{ distance?: string; duration?: string }>({})
+  const [routeStats, setRouteStats] = useState<{
+    distance?: string
+    duration?: string
+    loading?: boolean
+  }>({})
   const navigate = useNavigate()
 
   const { isLoaded, loadError } = useGoogleMaps()
@@ -179,6 +183,9 @@ export default function RoutesPage() {
     }
 
     if (path.length >= 2) {
+      setRouteStats({ loading: true })
+      polylineInstance.current?.setOptions({ path: [] }) // Visual clear to indicate recalculation
+
       const fetchDirections = async () => {
         const pref = formData.routingPreference || 'fastest'
         let totalDist = 0
@@ -186,28 +193,44 @@ export default function RoutesPage() {
         let fullPath: any[] = []
         let success = true
 
-        // Requisita rotas pareadas entre cada parada para garantir
-        // que o Google Maps retorne alternativas (provideRouteAlternatives falha com waypoints iterativos diretos)
+        // Requisita rotas pareadas entre cada parada para garantir que o Google Maps retorne alternativas
         for (let i = 0; i < path.length - 1; i++) {
           if (!active) return
           const origin = path[i]
           const destination = path[i + 1]
 
           try {
-            const response: any = await new Promise((resolve, reject) => {
-              directionsService.current.route(
-                {
-                  origin,
-                  destination,
-                  travelMode: window.google.maps.TravelMode.DRIVING,
-                  provideRouteAlternatives: true,
-                },
-                (res: any, status: string) => {
-                  if (status === 'OK') resolve(res)
-                  else reject(status)
-                },
-              )
+            const requestOpts: any = {
+              origin,
+              destination,
+              travelMode: window.google.maps.TravelMode.DRIVING,
+              provideRouteAlternatives: true,
+            }
+
+            // Force a different physical route for 'shortest' vs 'fastest' visually
+            if (pref === 'shortest') {
+              requestOpts.avoidHighways = true
+              requestOpts.avoidTolls = true
+            }
+
+            let response: any = await new Promise((resolve) => {
+              directionsService.current.route(requestOpts, (res: any, status: string) => {
+                if (status === 'OK') resolve(res)
+                else resolve(null)
+              })
             })
+
+            // Fallback se não encontrar rota com restrições
+            if (!response && pref === 'shortest') {
+              requestOpts.avoidHighways = false
+              requestOpts.avoidTolls = false
+              response = await new Promise((resolve) => {
+                directionsService.current.route(requestOpts, (res: any, status: string) => {
+                  if (status === 'OK') resolve(res)
+                  else resolve(null)
+                })
+              })
+            }
 
             if (!active) return
 
@@ -245,7 +268,7 @@ export default function RoutesPage() {
           }
 
           // Delay de proteção contra OVER_QUERY_LIMIT
-          await new Promise((r) => setTimeout(r, 150))
+          await new Promise((r) => setTimeout(r, 200))
         }
 
         if (!active) return
@@ -622,8 +645,13 @@ export default function RoutesPage() {
                       </ToggleGroupItem>
                     </ToggleGroup>
 
-                    {routeStats.distance && (
-                      <div className="text-xs text-slate-600 bg-white border border-slate-200 p-3 rounded-md shadow-sm flex items-center justify-between">
+                    {routeStats.loading ? (
+                      <div className="text-xs text-slate-500 bg-white border border-slate-200 p-3 rounded-md shadow-sm flex items-center justify-center gap-2">
+                        <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />{' '}
+                        Recalculando Rota...
+                      </div>
+                    ) : routeStats.distance ? (
+                      <div className="text-xs text-slate-600 bg-white border border-slate-200 p-3 rounded-md shadow-sm flex items-center justify-between animate-fade-in">
                         <div className="flex items-center gap-1.5">
                           <Ruler className="w-4 h-4 text-slate-400" />
                           <span>
@@ -638,7 +666,7 @@ export default function RoutesPage() {
                           </span>
                         </div>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </div>
 
