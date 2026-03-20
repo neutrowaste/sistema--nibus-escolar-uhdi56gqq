@@ -42,6 +42,7 @@ declare global {
   interface Window {
     google: any
     initGoogleMaps?: () => void
+    gm_authFailure?: () => void
   }
 }
 
@@ -99,13 +100,13 @@ export default function CockpitPage() {
 
   const loadGoogleMaps = useCallback(() => {
     return new Promise<void>((resolve, reject) => {
-      if (window.google?.maps) return resolve()
+      if (window.google?.maps?.marker) return resolve()
 
       const scriptId = 'google-maps-api-script'
       let script = document.getElementById(scriptId) as HTMLScriptElement
 
       if (script) {
-        if (window.google?.maps) return resolve()
+        if (window.google?.maps?.marker) return resolve()
         const oldCallback = window.initGoogleMaps
         window.initGoogleMaps = () => {
           if (oldCallback) oldCallback()
@@ -118,12 +119,21 @@ export default function CockpitPage() {
 
       window.initGoogleMaps = () => resolve()
 
+      window.gm_authFailure = () => {
+        console.warn('Google Maps API Key Error')
+        toast.error(
+          'Aviso: Chave de API do Google Maps ausente ou inválida. O mapa operará em modo restrito.',
+          {
+            duration: 8000,
+          },
+        )
+      }
+
       script = document.createElement('script')
       script.id = scriptId
       const keyParam = apiKey ? `key=${apiKey}&` : ''
 
-      // Loaded async with a callback to prevent warnings and blockages
-      script.src = `https://maps.googleapis.com/maps/api/js?${keyParam}libraries=geometry&loading=async&callback=initGoogleMaps`
+      script.src = `https://maps.googleapis.com/maps/api/js?${keyParam}libraries=geometry,marker&loading=async&callback=initGoogleMaps`
       script.async = true
       script.defer = true
       script.onerror = () => {
@@ -141,6 +151,7 @@ export default function CockpitPage() {
       zoom: 14,
       disableDefaultUI: true,
       zoomControl: true,
+      mapId: 'DEMO_MAP_ID', // Requerido para o uso do AdvancedMarkerElement
     })
 
     polylineInstance.current = new window.google.maps.Polyline({
@@ -151,7 +162,7 @@ export default function CockpitPage() {
       strokeWeight: 5,
     })
 
-    busMarkerInstance.current = new window.google.maps.Marker({
+    busMarkerInstance.current = new window.google.maps.marker.AdvancedMarkerElement({
       map: mapInstance.current,
       zIndex: 100,
     })
@@ -176,35 +187,30 @@ export default function CockpitPage() {
     })
 
     const stopSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" rx="6" fill="#10b981" stroke="white" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="white"/></svg>`
-    const stopIcon = {
-      url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(stopSvg)}`,
-      scaledSize: new window.google.maps.Size(24, 24),
-      anchor: new window.google.maps.Point(12, 12),
-    }
-
     const maintSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><rect width="28" height="28" rx="6" fill="#f59e0b" stroke="white" stroke-width="2"/><path d="M16 12l-4 4m0-4l4 4" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>`
-    const maintIcon = {
-      url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(maintSvg)}`,
-      scaledSize: new window.google.maps.Size(28, 28),
-      anchor: new window.google.maps.Point(14, 14),
+
+    const createIconElement = (svg: string) => {
+      const el = document.createElement('div')
+      el.innerHTML = svg
+      return el
     }
 
     stopsMarkersRef.current = [
-      new window.google.maps.Marker({
+      new window.google.maps.marker.AdvancedMarkerElement({
         position: { lat: -23.565414, lng: -46.654881 },
-        icon: stopIcon,
+        content: createIconElement(stopSvg),
         map: mapInstance.current,
       }),
-      new window.google.maps.Marker({
+      new window.google.maps.marker.AdvancedMarkerElement({
         position: { lat: -23.578416, lng: -46.655633 },
-        icon: stopIcon,
+        content: createIconElement(stopSvg),
         map: mapInstance.current,
       }),
     ]
     maintenanceMarkersRef.current = [
-      new window.google.maps.Marker({
+      new window.google.maps.marker.AdvancedMarkerElement({
         position: { lat: -23.581416, lng: -46.651633 },
-        icon: maintIcon,
+        content: createIconElement(maintSvg),
         map: mapInstance.current,
       }),
     ]
@@ -263,6 +269,7 @@ export default function CockpitPage() {
     try {
       const apiKey = getGoogleMapsApiKey()
       if (!apiKey) {
+        console.warn('API Key ausente para o computeRoutes. Usando fallback.')
         return waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
       }
 
@@ -286,7 +293,7 @@ export default function CockpitPage() {
 
       if (response.ok) {
         const data = await response.json()
-        if (data.routes?.[0]?.polyline?.encodedPath) {
+        if (data.routes?.[0]?.polyline?.encodedPath && window.google?.maps?.geometry?.encoding) {
           return window.google.maps.geometry.encoding.decodePath(
             data.routes[0].polyline.encodedPath,
           )
@@ -315,12 +322,16 @@ export default function CockpitPage() {
           <text x="50" y="82" font-family="sans-serif" font-size="10" fill="white" font-weight="bold" text-anchor="middle">BUS</text>
         </svg>
       `
-      busMarkerInstance.current.setIcon({
-        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
-        scaledSize: new window.google.maps.Size(100, 100),
-        anchor: new window.google.maps.Point(50, 50),
-      })
-      busMarkerInstance.current.setPosition(path[safeIndex])
+
+      let el = busMarkerInstance.current.content as HTMLElement
+      if (!el) {
+        el = document.createElement('div')
+        busMarkerInstance.current.content = el
+      }
+      el.innerHTML = svg
+      el.style.transform = 'translate(0, -50%)' // visually center the marker
+
+      busMarkerInstance.current.position = path[safeIndex]
     },
     [],
   )
@@ -429,14 +440,14 @@ export default function CockpitPage() {
   useEffect(() => {
     if (!mapInstance.current) return
     if (busMarkerInstance.current)
-      busMarkerInstance.current.setMap(layers.buses ? mapInstance.current : null)
+      busMarkerInstance.current.map = layers.buses ? mapInstance.current : null
     if (trafficLayerInstance.current)
       trafficLayerInstance.current.setMap(layers.traffic ? mapInstance.current : null)
     stopsMarkersRef.current.forEach((m) => {
-      m.setMap(layers.stops ? mapInstance.current : null)
+      m.map = layers.stops ? mapInstance.current : null
     })
     maintenanceMarkersRef.current.forEach((m) => {
-      m.setMap(layers.maintenance ? mapInstance.current : null)
+      m.map = layers.maintenance ? mapInstance.current : null
     })
   }, [layers])
 
