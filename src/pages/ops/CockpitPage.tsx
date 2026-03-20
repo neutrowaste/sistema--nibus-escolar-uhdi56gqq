@@ -191,20 +191,52 @@ export default function CockpitPage() {
 
   const fetchDirectionsAndSnap = async (waypoints: { lat: number; lng: number }[]) => {
     if (!window.google) return []
-    return new Promise<any[]>((resolve) => {
-      new window.google.maps.DirectionsService().route(
-        {
-          origin: waypoints[0],
-          destination: waypoints[waypoints.length - 1],
-          waypoints: waypoints.slice(1, -1).map((p) => ({ location: p, stopover: true })),
-          travelMode: window.google.maps.TravelMode.DRIVING,
+    if (waypoints.length < 2)
+      return waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
+
+    const origin = waypoints[0]
+    const destination = waypoints[waypoints.length - 1]
+    const intermediates = waypoints.slice(1, -1).map((p) => ({
+      location: { latLng: { latitude: p.lat, longitude: p.lng } },
+    }))
+
+    try {
+      const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
+          'X-Goog-FieldMask': 'routes.polyline.encodedPath',
         },
-        (res: any, status: string) => {
-          if (status === 'OK' && res) resolve(res.routes[0].overview_path)
-          else resolve(waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng)))
-        },
-      )
-    })
+        body: JSON.stringify({
+          origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
+          destination: {
+            location: { latLng: { latitude: destination.lat, longitude: destination.lng } },
+          },
+          intermediates,
+          travelMode: 'DRIVE',
+          routingPreference: 'TRAFFIC_AWARE',
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.routes?.[0]?.polyline?.encodedPath) {
+          return window.google.maps.geometry.encoding.decodePath(
+            data.routes[0].polyline.encodedPath,
+          )
+        }
+      } else {
+        console.warn(
+          'Routes API computeRoutes falhou. Usando fallback de linhas retas.',
+          await response.text(),
+        )
+      }
+    } catch (err) {
+      console.error('Erro na chamada da Routes API:', err)
+    }
+
+    return waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
   }
 
   const updateBusPosition = useCallback(
