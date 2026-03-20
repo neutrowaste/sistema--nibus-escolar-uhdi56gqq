@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { api, Route } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -18,6 +18,7 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { toast } from 'sonner'
 import { useNavigate } from 'react-router-dom'
+import { useGoogleMaps } from '@/contexts/GoogleMapsContext'
 
 export default function RoutesPage() {
   const [routes, setRoutes] = useState<Route[]>([])
@@ -26,10 +27,21 @@ export default function RoutesPage() {
   const [formData, setFormData] = useState<Partial<Route>>({})
   const navigate = useNavigate()
 
+  const { isLoaded, loadError } = useGoogleMaps()
+
   // AI Optimization state
   const [optimizingRoute, setOptimizingRoute] = useState<Route | null>(null)
   const [aiAnalyzing, setAiAnalyzing] = useState(false)
   const [aiSuggestion, setAiSuggestion] = useState<any>(null)
+
+  // Map state
+  const mapRef = useRef<HTMLDivElement>(null)
+  const mapInstance = useRef<any>(null)
+  const directionsService = useRef<any>(null)
+  const directionsRenderer = useRef<any>(null)
+  const polylineInstance = useRef<any>(null)
+  const markersRef = useRef<any[]>([])
+  const initialBoundsFit = useRef(false)
 
   const loadData = () => {
     setIsLoading(true)
@@ -42,6 +54,123 @@ export default function RoutesPage() {
   useEffect(() => {
     loadData()
   }, [])
+
+  useEffect(() => {
+    if (!isModalOpen || !isLoaded || !mapRef.current) return
+
+    if (!mapInstance.current && window.google?.maps) {
+      mapInstance.current = new window.google.maps.Map(mapRef.current, {
+        center: { lat: -23.561414, lng: -46.655881 },
+        zoom: 14,
+        disableDefaultUI: true,
+        zoomControl: true,
+        mapId: 'ROUTES_MAP_ID',
+      })
+
+      directionsService.current = new window.google.maps.DirectionsService()
+      directionsRenderer.current = new window.google.maps.DirectionsRenderer({
+        map: mapInstance.current,
+        suppressMarkers: true,
+        polylineOptions: {
+          strokeColor: '#3b82f6',
+          strokeOpacity: 0.8,
+          strokeWeight: 5,
+          zIndex: 50,
+        },
+      })
+
+      polylineInstance.current = new window.google.maps.Polyline({
+        map: mapInstance.current,
+        path: [],
+        strokeColor: '#94a3b8',
+        strokeOpacity: 0.8,
+        strokeWeight: 4,
+        strokeDasharray: '4 4',
+      })
+
+      window.google.maps.event.addListener(mapInstance.current, 'click', (e: any) => {
+        const lat = e.latLng.lat()
+        const lng = e.latLng.lng()
+        setFormData((prev) => {
+          const cps = prev.checkpoints || []
+          const newCp = {
+            id: Math.random().toString(),
+            name: `Parada ${cps.length + 1}`,
+            lat,
+            lng,
+            radius: 500,
+          }
+          return { ...prev, checkpoints: [...cps, newCp] }
+        })
+      })
+    }
+  }, [isModalOpen, isLoaded])
+
+  useEffect(() => {
+    if (!isModalOpen) {
+      initialBoundsFit.current = false
+      mapInstance.current = null
+      directionsService.current = null
+      directionsRenderer.current = null
+      polylineInstance.current = null
+      markersRef.current = []
+    }
+  }, [isModalOpen])
+
+  useEffect(() => {
+    if (!mapInstance.current || !formData.checkpoints || !window.google?.maps) return
+
+    const path = formData.checkpoints.map((cp) => ({ lat: cp.lat, lng: cp.lng }))
+
+    // Update Markers
+    markersRef.current.forEach((m) => {
+      if (m) m.map = null
+    })
+    markersRef.current = formData.checkpoints.map((cp, idx) => {
+      const el = document.createElement('div')
+      el.innerHTML = `<div style="background-color: #3b82f6; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${idx + 1}</div>`
+
+      return new window.google.maps.marker.AdvancedMarkerElement({
+        position: { lat: cp.lat, lng: cp.lng },
+        map: mapInstance.current,
+        content: el,
+      })
+    })
+
+    if (path.length > 0 && !initialBoundsFit.current) {
+      const bounds = new window.google.maps.LatLngBounds()
+      path.forEach((p) => bounds.extend(p))
+      mapInstance.current.fitBounds(bounds)
+      initialBoundsFit.current = true
+    }
+
+    if (path.length >= 2) {
+      const origin = path[0]
+      const destination = path[path.length - 1]
+      const waypoints = path.slice(1, -1).map((p) => ({ location: p, stopover: true }))
+
+      directionsService.current.route(
+        {
+          origin,
+          destination,
+          waypoints,
+          travelMode: window.google.maps.TravelMode.DRIVING,
+        },
+        (response: any, status: string) => {
+          if (status === 'OK') {
+            directionsRenderer.current.setDirections(response)
+            polylineInstance.current.setPath([]) // hide fallback
+          } else {
+            directionsRenderer.current.setDirections({ routes: [] })
+            polylineInstance.current.setPath(path)
+          }
+        },
+      )
+    } else {
+      directionsRenderer.current?.setDirections({ routes: [] })
+      polylineInstance.current?.setPath(path)
+    }
+  }, [formData.checkpoints])
 
   const handleSave = async () => {
     if (!formData.name || !formData.vehiclePlate)
@@ -285,114 +414,128 @@ export default function RoutesPage() {
       </Dialog>
 
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{formData.id ? 'Editar Rota' : 'Nova Rota'}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
-            <div className="space-y-2">
-              <Label>Nome da Rota</Label>
-              <Input
-                value={formData.name || ''}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Placa Veículo</Label>
-                <Input
-                  value={formData.vehiclePlate || ''}
-                  onChange={(e) => setFormData({ ...formData, vehiclePlate: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Motorista</Label>
-                <Input
-                  value={formData.driver || ''}
-                  onChange={(e) => setFormData({ ...formData, driver: e.target.value })}
-                />
-              </div>
-            </div>
+        <DialogContent className="max-w-5xl h-[90vh] flex flex-col p-0 overflow-hidden">
+          <div className="p-6 pb-2 border-b">
+            <DialogHeader>
+              <DialogTitle>{formData.id ? 'Editar Rota' : 'Nova Rota'}</DialogTitle>
+              <DialogDescription>
+                Preencha os dados da rota e clique no mapa para adicionar os pontos de coleta
+                (paradas).
+              </DialogDescription>
+            </DialogHeader>
+          </div>
 
-            <div className="mt-4 pt-4 border-t space-y-4">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold">Pontos de Coleta (Paradas)</h4>
-                  <span className="text-[10px] text-muted-foreground uppercase bg-slate-100 px-2 py-0.5 rounded-full font-bold tracking-wider">
-                    {formData.checkpoints?.length || 0} Paradas
-                  </span>
+          <div className="flex-1 flex overflow-hidden">
+            {/* Form Column */}
+            <div className="w-[40%] flex flex-col p-6 overflow-y-auto border-r bg-slate-50/50">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Nome da Rota</Label>
+                  <Input
+                    value={formData.name || ''}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  />
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Insira as coordenadas manualmente ou use a aba de Edição Visual no mapa do
-                  Cockpit.
-                </p>
-              </div>
-              <div className="space-y-2">
-                {(formData.checkpoints || []).map((cp, idx) => (
-                  <div
-                    key={cp.id || idx}
-                    className="flex gap-2 items-center bg-slate-50 p-2 rounded border transition-colors focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400"
-                  >
-                    <span className="font-bold text-slate-500 text-xs w-4 text-center">
-                      {idx + 1}
-                    </span>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Placa Veículo</Label>
                     <Input
-                      value={cp.name}
-                      onChange={(e) => updateCp(idx, 'name', e.target.value)}
-                      placeholder="Nome da Parada"
-                      className="h-8 text-xs flex-1"
+                      value={formData.vehiclePlate || ''}
+                      onChange={(e) => setFormData({ ...formData, vehiclePlate: e.target.value })}
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Motorista</Label>
                     <Input
-                      value={cp.lat}
-                      onChange={(e) => updateCp(idx, 'lat', parseFloat(e.target.value))}
-                      placeholder="Lat"
-                      type="number"
-                      step="any"
-                      className="h-8 w-24 text-xs font-mono"
+                      value={formData.driver || ''}
+                      onChange={(e) => setFormData({ ...formData, driver: e.target.value })}
                     />
-                    <Input
-                      value={cp.lng}
-                      onChange={(e) => updateCp(idx, 'lng', parseFloat(e.target.value))}
-                      placeholder="Lng"
-                      type="number"
-                      step="any"
-                      className="h-8 w-24 text-xs font-mono"
-                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t space-y-4">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold">Pontos de Coleta</h4>
+                      <span className="text-[10px] text-muted-foreground uppercase bg-slate-100 px-2 py-0.5 rounded-full font-bold tracking-wider">
+                        {formData.checkpoints?.length || 0} Paradas
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {(formData.checkpoints || []).map((cp, idx) => (
+                      <div
+                        key={cp.id || idx}
+                        className="flex gap-2 items-center bg-white p-2 rounded border transition-colors focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400 shadow-sm"
+                      >
+                        <div className="bg-blue-100 text-blue-700 w-6 h-6 shrink-0 rounded-full flex items-center justify-center font-bold text-[11px]">
+                          {idx + 1}
+                        </div>
+                        <Input
+                          value={cp.name}
+                          onChange={(e) => updateCp(idx, 'name', e.target.value)}
+                          placeholder="Nome da Parada"
+                          className="h-8 text-xs flex-1"
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeCp(idx)}
+                          className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50 shrink-0"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ))}
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeCp(idx)}
-                      className="h-8 w-8 text-red-500 shrink-0 hover:bg-red-50 hover:text-red-600"
+                      variant="outline"
+                      size="sm"
+                      onClick={addCp}
+                      className="w-full text-xs border-dashed text-slate-500 hover:text-slate-900 mt-2"
                     >
-                      <X className="w-4 h-4" />
+                      <Plus className="w-4 h-4 mr-1" /> Adicionar Ponto Manualmente
                     </Button>
                   </div>
-                ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={addCp}
-                  className="w-full text-xs border-dashed text-slate-500 hover:text-slate-900 mt-2"
-                >
-                  <Plus className="w-4 h-4 mr-1" /> Adicionar Ponto de Coleta
-                </Button>
+                </div>
+
+                <div className="pt-4 border-t space-y-4">
+                  <h4 className="text-sm font-semibold">Geofencing</h4>
+                  <div className="flex justify-between items-center bg-white p-3 rounded border shadow-sm">
+                    <Label className="cursor-pointer text-sm text-slate-600 font-normal">
+                      Alertas WhatsApp (Aproximação)
+                    </Label>
+                    <Switch
+                      checked={!!formData.whatsappAlerts}
+                      onCheckedChange={(v) => setFormData({ ...formData, whatsappAlerts: v })}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="mt-4 pt-4 border-t space-y-4">
-              <h4 className="text-sm font-semibold">Geofencing</h4>
-              <div className="flex justify-between items-center bg-slate-50 p-3 rounded border">
-                <Label className="cursor-pointer">Alertas WhatsApp (Aproximação)</Label>
-                <Switch
-                  checked={!!formData.whatsappAlerts}
-                  onCheckedChange={(v) => setFormData({ ...formData, whatsappAlerts: v })}
-                />
+            {/* Map Column */}
+            <div className="w-[60%] relative bg-slate-100">
+              {(!isLoaded || loadError) && (
+                <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-slate-500 bg-slate-100/90 z-10 backdrop-blur-sm">
+                  {loadError || 'Iniciando Google Maps...'}
+                </div>
+              )}
+              <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white/95 backdrop-blur px-4 py-2 rounded-full shadow-md text-sm font-medium text-slate-700 pointer-events-none flex items-center gap-2 border">
+                <MapPin className="w-4 h-4 text-blue-500" />
+                Clique no mapa para adicionar pontos
               </div>
+              <div ref={mapRef} className="absolute inset-0" />
             </div>
           </div>
-          <DialogFooter>
-            <Button onClick={handleSave}>Salvar Rota e Pontos</Button>
-          </DialogFooter>
+
+          <div className="p-4 border-t bg-slate-50 flex justify-end">
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsModalOpen(false)} className="mr-2">
+                Cancelar
+              </Button>
+              <Button onClick={handleSave}>Salvar Rota e Pontos</Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
