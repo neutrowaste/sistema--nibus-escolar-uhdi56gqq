@@ -6,6 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { AuthProvider } from './contexts/AuthContext'
 import { NotificationProvider } from './contexts/NotificationContext'
 import { OfflineSyncProvider } from './contexts/OfflineSyncContext'
+import { GoogleMapsProvider } from './contexts/GoogleMapsContext'
 import { RequireAuth } from './components/RequireAuth'
 import Layout from './components/Layout'
 
@@ -32,41 +33,43 @@ import NotFound from './pages/NotFound'
 const App = () => (
   <BrowserRouter future={{ v7_startTransition: false, v7_relativeSplatPath: false }}>
     <OfflineSyncProvider>
-      <NotificationProvider>
-        <AuthProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Sonner position="top-right" />
-            <Routes>
-              <Route path="/login" element={<Login />} />
+      <GoogleMapsProvider>
+        <NotificationProvider>
+          <AuthProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner position="top-right" />
+              <Routes>
+                <Route path="/login" element={<Login />} />
 
-              <Route element={<RequireAuth />}>
-                <Route element={<Layout />}>
-                  <Route path="/" element={<Index />} />
-                  <Route path="/iam/users" element={<UsersPage />} />
-                  <Route path="/iam/roles" element={<RolesPage />} />
-                  <Route path="/iam/students" element={<StudentsPage />} />
-                  <Route path="/iam/drivers" element={<DriversPage />} />
-                  <Route path="/fleet/vehicles" element={<VehiclesPage />} />
-                  <Route path="/fleet/maintenance" element={<MaintenancePage />} />
-                  <Route path="/fleet/documents" element={<DocumentsPage />} />
-                  <Route path="/ops/routes" element={<RoutesPage />} />
-                  <Route path="/ops/cockpit" element={<CockpitPage />} />
-                  <Route path="/ops/performance" element={<PerformancePage />} />
-                  <Route path="/ops/biometrics" element={<BiometricsPage />} />
-                  <Route path="/ops/chat" element={<ChatPage />} />
-                  <Route path="/settings/notifications" element={<NotificationsPage />} />
+                <Route element={<RequireAuth />}>
+                  <Route element={<Layout />}>
+                    <Route path="/" element={<Index />} />
+                    <Route path="/iam/users" element={<UsersPage />} />
+                    <Route path="/iam/roles" element={<RolesPage />} />
+                    <Route path="/iam/students" element={<StudentsPage />} />
+                    <Route path="/iam/drivers" element={<DriversPage />} />
+                    <Route path="/fleet/vehicles" element={<VehiclesPage />} />
+                    <Route path="/fleet/maintenance" element={<MaintenancePage />} />
+                    <Route path="/fleet/documents" element={<DocumentsPage />} />
+                    <Route path="/ops/routes" element={<RoutesPage />} />
+                    <Route path="/ops/cockpit" element={<CockpitPage />} />
+                    <Route path="/ops/performance" element={<PerformancePage />} />
+                    <Route path="/ops/biometrics" element={<BiometricsPage />} />
+                    <Route path="/ops/chat" element={<ChatPage />} />
+                    <Route path="/settings/notifications" element={<NotificationsPage />} />
+                  </Route>
+                  <Route path="/parents/portal" element={<ParentsPortalPage />} />
+                  <Route path="/driver/portal" element={<DriverPortalPage />} />
+                  <Route path="/commercial-summary" element={<CommercialSummary />} />
                 </Route>
-                <Route path="/parents/portal" element={<ParentsPortalPage />} />
-                <Route path="/driver/portal" element={<DriverPortalPage />} />
-                <Route path="/commercial-summary" element={<CommercialSummary />} />
-              </Route>
 
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </TooltipProvider>
-        </AuthProvider>
-      </NotificationProvider>
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </TooltipProvider>
+          </AuthProvider>
+        </NotificationProvider>
+      </GoogleMapsProvider>
     </OfflineSyncProvider>
   </BrowserRouter>
 )
