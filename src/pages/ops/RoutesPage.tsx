@@ -102,12 +102,6 @@ export default function RoutesPage() {
       directionsRenderer.current = new window.google.maps.DirectionsRenderer({
         map: mapInstance.current,
         suppressMarkers: true,
-        polylineOptions: {
-          strokeColor: '#3b82f6',
-          strokeOpacity: 0.8,
-          strokeWeight: 5,
-          zIndex: 50,
-        },
       })
 
       polylineInstance.current = new window.google.maps.Polyline({
@@ -155,15 +149,20 @@ export default function RoutesPage() {
   useEffect(() => {
     if (!mapReady || !mapInstance.current || !formData.checkpoints || !window.google?.maps) return
 
+    let active = true
+
     const path = formData.checkpoints.map((cp) => ({ lat: cp.lat, lng: cp.lng }))
 
     // Update Markers
     markersRef.current.forEach((m) => {
       if (m) m.map = null
     })
+
+    const prefColor = formData.routingPreference === 'shortest' ? '#10b981' : '#3b82f6'
+
     markersRef.current = formData.checkpoints.map((cp, idx) => {
       const el = document.createElement('div')
-      el.innerHTML = `<div style="background-color: #3b82f6; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${idx + 1}</div>`
+      el.innerHTML = `<div style="background-color: ${prefColor}; color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; border: 2px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">${idx + 1}</div>`
 
       return new window.google.maps.marker.AdvancedMarkerElement({
         position: { lat: cp.lat, lng: cp.lng },
@@ -180,61 +179,119 @@ export default function RoutesPage() {
     }
 
     if (path.length >= 2) {
-      const origin = path[0]
-      const destination = path[path.length - 1]
-      const waypoints = path.slice(1, -1).map((p) => ({ location: p, stopover: true }))
+      const fetchDirections = async () => {
+        const pref = formData.routingPreference || 'fastest'
+        let totalDist = 0
+        let totalDur = 0
+        let fullPath: any[] = []
+        let success = true
 
-      directionsService.current.route(
-        {
-          origin,
-          destination,
-          waypoints,
-          travelMode: window.google.maps.TravelMode.DRIVING,
-          provideRouteAlternatives: true,
-        },
-        (response: any, status: string) => {
-          if (status === 'OK' && response.routes && response.routes.length > 0) {
-            // Calculate totals for each alternative route
-            const routesWithTotals = response.routes.map((route: any, index: number) => {
-              let dist = 0
-              let dur = 0
-              route.legs.forEach((l: any) => {
-                dist += l.distance?.value || 0
-                dur += l.duration?.value || 0
+        // Requisita rotas pareadas entre cada parada para garantir
+        // que o Google Maps retorne alternativas (provideRouteAlternatives falha com waypoints iterativos diretos)
+        for (let i = 0; i < path.length - 1; i++) {
+          if (!active) return
+          const origin = path[i]
+          const destination = path[i + 1]
+
+          try {
+            const response: any = await new Promise((resolve, reject) => {
+              directionsService.current.route(
+                {
+                  origin,
+                  destination,
+                  travelMode: window.google.maps.TravelMode.DRIVING,
+                  provideRouteAlternatives: true,
+                },
+                (res: any, status: string) => {
+                  if (status === 'OK') resolve(res)
+                  else reject(status)
+                },
+              )
+            })
+
+            if (!active) return
+
+            if (response && response.routes && response.routes.length > 0) {
+              const routesWithTotals = response.routes.map((route: any, index: number) => {
+                let dist = 0
+                let dur = 0
+                route.legs.forEach((l: any) => {
+                  dist += l.distance?.value || 0
+                  dur += l.duration?.value || 0
+                })
+                return { index, dist, dur, route }
               })
-              return { index, dist, dur, route }
-            })
 
-            // Sort routes based on user preference
-            const pref = formData.routingPreference || 'fastest'
-            if (pref === 'shortest') {
-              routesWithTotals.sort((a: any, b: any) => a.dist - b.dist)
+              if (pref === 'shortest') {
+                routesWithTotals.sort((a: any, b: any) => a.dist - b.dist)
+              } else {
+                routesWithTotals.sort((a: any, b: any) => a.dur - b.dur)
+              }
+
+              const bestRoute = routesWithTotals[0].route
+              totalDist += routesWithTotals[0].dist
+              totalDur += routesWithTotals[0].dur
+
+              bestRoute.overview_path.forEach((p: any) => {
+                fullPath.push(p)
+              })
             } else {
-              routesWithTotals.sort((a: any, b: any) => a.dur - b.dur)
+              success = false
+              break
             }
-
-            const bestRoute = routesWithTotals[0]
-
-            directionsRenderer.current.setDirections(response)
-            directionsRenderer.current.setRouteIndex(bestRoute.index)
-
-            setRouteStats({
-              distance: (bestRoute.dist / 1000).toFixed(1) + ' km',
-              duration: Math.round(bestRoute.dur / 60) + ' min',
-            })
-
-            polylineInstance.current.setPath([]) // hide fallback
-          } else {
-            directionsRenderer.current.setDirections({ routes: [] })
-            polylineInstance.current.setPath(path)
-            setRouteStats({})
+          } catch (e) {
+            success = false
+            break
           }
-        },
-      )
+
+          // Delay de proteção contra OVER_QUERY_LIMIT
+          await new Promise((r) => setTimeout(r, 150))
+        }
+
+        if (!active) return
+
+        if (success && fullPath.length > 0) {
+          directionsRenderer.current?.setDirections({ routes: [] })
+          polylineInstance.current?.setOptions({
+            path: fullPath,
+            strokeColor: pref === 'shortest' ? '#10b981' : '#3b82f6',
+            strokeOpacity: 0.8,
+            strokeWeight: 5,
+            strokeDasharray: null,
+          })
+
+          setRouteStats({
+            distance: (totalDist / 1000).toFixed(1) + ' km',
+            duration: Math.round(totalDur / 60) + ' min',
+          })
+        } else {
+          directionsRenderer.current?.setDirections({ routes: [] })
+          polylineInstance.current?.setOptions({
+            path,
+            strokeColor: '#94a3b8',
+            strokeOpacity: 0.8,
+            strokeWeight: 4,
+            strokeDasharray: '4 4',
+          })
+          setRouteStats({})
+        }
+      }
+
+      fetchDirections()
     } else {
       directionsRenderer.current?.setDirections({ routes: [] })
-      polylineInstance.current?.setPath(path)
+      polylineInstance.current?.setOptions({
+        path,
+        strokeColor: '#94a3b8',
+        strokeOpacity: 0.8,
+        strokeWeight: 4,
+        strokeDasharray: '4 4',
+      })
       setRouteStats({})
+    }
+
+    return () => {
+      active = false
     }
   }, [formData.checkpoints, mapReady, formData.routingPreference])
 
@@ -413,11 +470,11 @@ export default function RoutesPage() {
                     <div className="flex items-center text-xs text-slate-500 gap-2">
                       {r.routingPreference === 'fastest' ? (
                         <>
-                          <Clock className="w-3 h-3" /> Caminho mais rápido
+                          <Clock className="w-3 h-3 text-blue-500" /> Caminho mais rápido
                         </>
                       ) : (
                         <>
-                          <Ruler className="w-3 h-3" /> Menor caminho
+                          <Ruler className="w-3 h-3 text-emerald-500" /> Menor caminho
                         </>
                       )}
                     </div>
@@ -561,7 +618,7 @@ export default function RoutesPage() {
                         aria-label="Menor Caminho"
                         className="data-[state=on]:bg-white data-[state=on]:shadow-sm px-3 text-xs"
                       >
-                        <Ruler className="h-3.5 w-3.5 mr-2 text-green-500" /> Menor Caminho
+                        <Ruler className="h-3.5 w-3.5 mr-2 text-emerald-500" /> Menor Caminho
                       </ToggleGroupItem>
                     </ToggleGroup>
 
@@ -600,7 +657,13 @@ export default function RoutesPage() {
                         key={cp.id || idx}
                         className="flex gap-2 items-center bg-white p-2 rounded border transition-colors focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400 shadow-sm"
                       >
-                        <div className="bg-blue-100 text-blue-700 w-6 h-6 shrink-0 rounded-full flex items-center justify-center font-bold text-[11px]">
+                        <div
+                          className={`text-white w-6 h-6 shrink-0 rounded-full flex items-center justify-center font-bold text-[11px]`}
+                          style={{
+                            backgroundColor:
+                              formData.routingPreference === 'shortest' ? '#10b981' : '#3b82f6',
+                          }}
+                        >
                           {idx + 1}
                         </div>
                         <Input
