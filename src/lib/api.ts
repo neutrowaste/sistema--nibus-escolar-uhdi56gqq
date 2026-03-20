@@ -42,6 +42,7 @@ export interface Route {
   whatsappAlerts?: boolean
   alertRadius?: number
   optimized?: boolean
+  routingPreference?: 'fastest' | 'shortest'
 }
 export interface Student {
   id: string
@@ -135,6 +136,7 @@ let mockRoutes: Route[] = [
     status: 'Em Andamento',
     whatsappAlerts: true,
     alertRadius: 500,
+    routingPreference: 'fastest',
     checkpoints: [
       { id: 'cp1', name: 'Parada 1 (Escola)', lat: -23.561414, lng: -46.655881, radius: 500 },
       { id: 'cp2', name: 'Parada 2 (Bairro)', lat: -23.573416, lng: -46.653633, radius: 500 },

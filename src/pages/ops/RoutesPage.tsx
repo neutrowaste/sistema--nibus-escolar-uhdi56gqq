@@ -3,7 +3,18 @@ import { api, Route } from '@/lib/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { MapPin, Pencil, Trash2, Route as RouteIcon, Plus, Sparkles, Check, X } from 'lucide-react'
+import {
+  MapPin,
+  Pencil,
+  Trash2,
+  Route as RouteIcon,
+  Plus,
+  Sparkles,
+  Check,
+  X,
+  Clock,
+  Ruler,
+} from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
@@ -16,6 +27,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { toast } from 'sonner'
 import { useNavigate } from 'react-router-dom'
 import { useGoogleMaps } from '@/contexts/GoogleMapsContext'
@@ -25,6 +37,7 @@ export default function RoutesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [formData, setFormData] = useState<Partial<Route>>({})
+  const [routeStats, setRouteStats] = useState<{ distance?: string; duration?: string }>({})
   const navigate = useNavigate()
 
   const { isLoaded, loadError } = useGoogleMaps()
@@ -177,22 +190,53 @@ export default function RoutesPage() {
           destination,
           waypoints,
           travelMode: window.google.maps.TravelMode.DRIVING,
+          provideRouteAlternatives: true,
         },
         (response: any, status: string) => {
-          if (status === 'OK') {
+          if (status === 'OK' && response.routes && response.routes.length > 0) {
+            // Calculate totals for each alternative route
+            const routesWithTotals = response.routes.map((route: any, index: number) => {
+              let dist = 0
+              let dur = 0
+              route.legs.forEach((l: any) => {
+                dist += l.distance?.value || 0
+                dur += l.duration?.value || 0
+              })
+              return { index, dist, dur, route }
+            })
+
+            // Sort routes based on user preference
+            const pref = formData.routingPreference || 'fastest'
+            if (pref === 'shortest') {
+              routesWithTotals.sort((a: any, b: any) => a.dist - b.dist)
+            } else {
+              routesWithTotals.sort((a: any, b: any) => a.dur - b.dur)
+            }
+
+            const bestRoute = routesWithTotals[0]
+
             directionsRenderer.current.setDirections(response)
+            directionsRenderer.current.setRouteIndex(bestRoute.index)
+
+            setRouteStats({
+              distance: (bestRoute.dist / 1000).toFixed(1) + ' km',
+              duration: Math.round(bestRoute.dur / 60) + ' min',
+            })
+
             polylineInstance.current.setPath([]) // hide fallback
           } else {
             directionsRenderer.current.setDirections({ routes: [] })
             polylineInstance.current.setPath(path)
+            setRouteStats({})
           }
         },
       )
     } else {
       directionsRenderer.current?.setDirections({ routes: [] })
       polylineInstance.current?.setPath(path)
+      setRouteStats({})
     }
-  }, [formData.checkpoints, mapReady])
+  }, [formData.checkpoints, mapReady, formData.routingPreference])
 
   const handleSave = async () => {
     if (!formData.name || !formData.vehiclePlate)
@@ -216,6 +260,7 @@ export default function RoutesPage() {
   }
 
   const openModal = (route?: Route) => {
+    setRouteStats({})
     setFormData(
       route
         ? JSON.parse(JSON.stringify(route))
@@ -225,6 +270,7 @@ export default function RoutesPage() {
             whatsappAlerts: false,
             alertRadius: 500,
             checkpoints: [],
+            routingPreference: 'fastest',
           },
     )
     setIsModalOpen(true)
@@ -363,6 +409,19 @@ export default function RoutesPage() {
                     <MapPin className="h-4 w-4 text-blue-500" /> {r.checkpoints?.length || 0}{' '}
                     paradas (pontos de coleta)
                   </div>
+                  {r.routingPreference && (
+                    <div className="flex items-center text-xs text-slate-500 gap-2">
+                      {r.routingPreference === 'fastest' ? (
+                        <>
+                          <Clock className="w-3 h-3" /> Caminho mais rápido
+                        </>
+                      ) : (
+                        <>
+                          <Ruler className="w-3 h-3" /> Menor caminho
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="mt-4 flex items-center justify-between border-t pt-4">
                   <Badge
@@ -472,6 +531,57 @@ export default function RoutesPage() {
                       value={formData.driver || ''}
                       onChange={(e) => setFormData({ ...formData, driver: e.target.value })}
                     />
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t space-y-4">
+                  <h4 className="text-sm font-semibold text-slate-800">Otimização de Trajeto</h4>
+                  <div className="flex flex-col gap-3">
+                    <ToggleGroup
+                      type="single"
+                      value={formData.routingPreference || 'fastest'}
+                      onValueChange={(v) => {
+                        if (v)
+                          setFormData({
+                            ...formData,
+                            routingPreference: v as 'fastest' | 'shortest',
+                          })
+                      }}
+                      className="justify-start bg-slate-100 p-1 rounded-md border inline-flex self-start"
+                    >
+                      <ToggleGroupItem
+                        value="fastest"
+                        aria-label="Mais Rápido"
+                        className="data-[state=on]:bg-white data-[state=on]:shadow-sm px-3 text-xs"
+                      >
+                        <Clock className="h-3.5 w-3.5 mr-2 text-blue-500" /> Mais Rápido
+                      </ToggleGroupItem>
+                      <ToggleGroupItem
+                        value="shortest"
+                        aria-label="Menor Caminho"
+                        className="data-[state=on]:bg-white data-[state=on]:shadow-sm px-3 text-xs"
+                      >
+                        <Ruler className="h-3.5 w-3.5 mr-2 text-green-500" /> Menor Caminho
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+
+                    {routeStats.distance && (
+                      <div className="text-xs text-slate-600 bg-white border border-slate-200 p-3 rounded-md shadow-sm flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <Ruler className="w-4 h-4 text-slate-400" />
+                          <span>
+                            Distância:{' '}
+                            <strong className="text-slate-900">{routeStats.distance}</strong>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Clock className="w-4 h-4 text-slate-400" />
+                          <span>
+                            Tempo: <strong className="text-slate-900">{routeStats.duration}</strong>
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
