@@ -155,18 +155,19 @@ export default function Layout() {
           <div className="flex-1 flex items-center justify-between">
             <Breadcrumb>
               <BreadcrumbList>
-                {breadcrumbs.map((crumb, idx) => (
-                  <React.Fragment key={crumb.path}>
-                    <BreadcrumbItem>
-                      {idx === breadcrumbs.length - 1 ? (
+                {breadcrumbs.map((crumb, idx) => {
+                  const isLast = idx === breadcrumbs.length - 1
+                  return [
+                    <BreadcrumbItem key={`item-${crumb.path}`}>
+                      {isLast ? (
                         <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
                       ) : (
                         <BreadcrumbLink href={crumb.path}>{crumb.name}</BreadcrumbLink>
                       )}
-                    </BreadcrumbItem>
-                    {idx < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
-                  </React.Fragment>
-                ))}
+                    </BreadcrumbItem>,
+                    !isLast && <BreadcrumbSeparator key={`sep-${crumb.path}`} />,
+                  ]
+                })}
               </BreadcrumbList>
             </Breadcrumb>
 
