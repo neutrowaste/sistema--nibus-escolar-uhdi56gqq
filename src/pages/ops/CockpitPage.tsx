@@ -31,6 +31,9 @@ import {
   MapPin,
   Wrench,
   TrafficCone,
+  SquareDashed,
+  Check,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
@@ -68,12 +71,16 @@ export default function CockpitPage() {
   const [zoneModal, setZoneModal] = useState({ open: false, type: 'interest', name: '' })
   const [pendingZone, setPendingZone] = useState<any>(null)
 
+  const [isDrawing, setIsDrawing] = useState(false)
+  const isDrawingRef = useRef(false)
+  const drawingPathRef = useRef<any[]>([])
+  const previewPolygonRef = useRef<any>(null)
+
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstance = useRef<any>(null)
   const polylineInstance = useRef<any>(null)
   const busMarkerInstance = useRef<any>(null)
   const trafficLayerInstance = useRef<any>(null)
-  const drawingManagerInstance = useRef<any>(null)
 
   const busDivRef = useRef<HTMLElement | null>(null)
   const polygonsRef = useRef<any[]>([])
@@ -112,7 +119,8 @@ export default function CockpitPage() {
 
       script = document.createElement('script')
       script.id = scriptId
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry,drawing,marker`
+      // Removed "drawing" library dependency as it is deprecated
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry,marker`
       script.async = true
       script.defer = true
       script.onload = () => resolve()
@@ -175,28 +183,23 @@ export default function CockpitPage() {
     })
 
     trafficLayerInstance.current = new window.google.maps.TrafficLayer()
-    drawingManagerInstance.current = new window.google.maps.drawing.DrawingManager({
-      drawingMode: null,
-      drawingControl: true,
-      drawingControlOptions: {
-        position: window.google.maps.ControlPosition.TOP_CENTER,
-        drawingModes: ['polygon'],
-      },
-      polygonOptions: { fillColor: '#3b82f6', fillOpacity: 0.3, strokeWeight: 2 },
-    })
-    drawingManagerInstance.current.setMap(mapInstance.current)
 
-    window.google.maps.event.addListener(
-      drawingManagerInstance.current,
-      'overlaycomplete',
-      (e: any) => {
-        if (e.type === 'polygon') {
-          setPendingZone(e.overlay)
-          setZoneModal({ open: true, type: 'interest', name: '' })
-          drawingManagerInstance.current.setDrawingMode(null)
-        }
-      },
-    )
+    window.google.maps.event.addListener(mapInstance.current, 'click', (e: any) => {
+      if (!isDrawingRef.current) return
+      drawingPathRef.current.push(e.latLng)
+      if (!previewPolygonRef.current) {
+        previewPolygonRef.current = new window.google.maps.Polygon({
+          map: mapInstance.current,
+          path: drawingPathRef.current,
+          fillColor: '#3b82f6',
+          fillOpacity: 0.3,
+          strokeWeight: 2,
+          clickable: false,
+        })
+      } else {
+        previewPolygonRef.current.setPath(drawingPathRef.current)
+      }
+    })
 
     const stopHtml = `<div class="w-5 h-5 rounded border-2 border-white shadow-lg flex items-center justify-center bg-emerald-500"><div class="w-1.5 h-1.5 bg-white rounded-full"></div></div>`
     const maintHtml = `<div class="w-6 h-6 bg-amber-500 border-2 border-white rounded-md flex items-center justify-center shadow-lg"><svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg></div>`
@@ -221,6 +224,45 @@ export default function CockpitPage() {
       }),
     ]
   }, [updateBusMarkerContent, createHTMLMarker])
+
+  const startDrawing = () => {
+    setIsDrawing(true)
+    isDrawingRef.current = true
+    drawingPathRef.current = []
+    if (mapInstance.current) {
+      mapInstance.current.setOptions({ draggableCursor: 'crosshair' })
+    }
+    toast.info('Clique no mapa para desenhar os vértices da zona.')
+  }
+
+  const cancelDrawing = () => {
+    setIsDrawing(false)
+    isDrawingRef.current = false
+    if (mapInstance.current) {
+      mapInstance.current.setOptions({ draggableCursor: null })
+    }
+    if (previewPolygonRef.current) {
+      previewPolygonRef.current.setMap(null)
+      previewPolygonRef.current = null
+    }
+    drawingPathRef.current = []
+  }
+
+  const finishDrawing = () => {
+    if (drawingPathRef.current.length < 3) {
+      toast.error('Adicione pelo menos 3 pontos para formar uma zona.')
+      return
+    }
+    setIsDrawing(false)
+    isDrawingRef.current = false
+    if (mapInstance.current) {
+      mapInstance.current.setOptions({ draggableCursor: null })
+    }
+    setPendingZone(previewPolygonRef.current)
+    previewPolygonRef.current = null
+    drawingPathRef.current = []
+    setZoneModal({ open: true, type: 'interest', name: '' })
+  }
 
   const fetchDirectionsAndSnap = async (waypoints: { lat: number; lng: number }[]) => {
     if (!window.google) return []
@@ -430,11 +472,12 @@ export default function CockpitPage() {
     pendingZone.setOptions({
       fillColor: isRisk ? '#ef4444' : '#10b981',
       strokeColor: isRisk ? '#ef4444' : '#10b981',
+      clickable: true,
     })
     const iw = new window.google.maps.InfoWindow({
       content: `<div style="padding: 4px; font-family: sans-serif;"><strong style="font-size: 14px;">${zoneModal.name || 'Nova Zona'}</strong><br/><span style="font-size: 12px; color: #64748b;">Zona de ${isRisk ? 'Risco' : 'Interesse'}</span></div>`,
     })
-    pendingZone.addListener('click', (e: any) => {
+    window.google.maps.event.addListener(pendingZone, 'click', (e: any) => {
       iw.setPosition(e.latLng)
       iw.open(mapInstance.current)
     })
@@ -473,6 +516,30 @@ export default function CockpitPage() {
 
       <div className="flex-1 relative rounded-xl overflow-hidden border-2 shadow-inner bg-slate-100">
         <div ref={mapRef} className="absolute inset-0" />
+
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 flex gap-2">
+          {!isDrawing ? (
+            <Button
+              variant="secondary"
+              className="bg-white/95 backdrop-blur shadow-sm font-semibold border-slate-200"
+              onClick={startDrawing}
+            >
+              <SquareDashed className="w-4 h-4 mr-2" /> Nova Zona (Geofencing)
+            </Button>
+          ) : (
+            <>
+              <Button
+                className="shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white"
+                onClick={finishDrawing}
+              >
+                <Check className="w-4 h-4 mr-2" /> Finalizar Zona
+              </Button>
+              <Button variant="destructive" className="shadow-sm" onClick={cancelDrawing}>
+                <X className="w-4 h-4 mr-2" /> Cancelar
+              </Button>
+            </>
+          )}
+        </div>
 
         <Popover>
           <PopoverTrigger asChild>
