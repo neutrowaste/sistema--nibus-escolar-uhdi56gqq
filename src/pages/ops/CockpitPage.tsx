@@ -231,30 +231,36 @@ export default function CockpitPage() {
         }
       }
 
-      const color = isAlert ? '#ef4444' : '#3b82f6'
-      const shadow = isAlert ? '0 0 20px rgba(239,68,68,0.9)' : '0 4px 10px rgba(0,0,0,0.5)'
+      const color = isAlert ? '#ef4444' : '#eab308' // Default school bus yellow
+      const textColor = isAlert ? 'white' : '#1e293b'
+      const borderColor = isAlert ? 'white' : '#1e293b'
+      const shadow = isAlert ? '0 0 15px rgba(239,68,68,0.8)' : '0 4px 8px rgba(0,0,0,0.4)'
 
       const svg = `
         <div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; transform: translate(0, -50%); z-index: 1000; pointer-events: none;">
           <div style="transform: rotate(${heading}deg); transition: transform 0.1s linear; transform-origin: center center;">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="64" height="64" style="filter: drop-shadow(${shadow});">
-              <!-- Vehicle Body -->
-              <rect x="25" y="10" width="50" height="80" rx="12" fill="${color}" stroke="white" stroke-width="4"/>
-              <!-- Vehicle Roof -->
-              <rect x="30" y="40" width="40" height="20" rx="4" fill="rgba(255,255,255,0.2)"/>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="36" height="36" style="filter: drop-shadow(${shadow});">
+              <!-- Bus Body -->
+              <rect x="25" y="5" width="50" height="90" rx="6" fill="${color}" stroke="#1e293b" stroke-width="2"/>
               <!-- Front Windshield -->
-              <path d="M 28 35 Q 50 30 72 35 L 68 22 Q 50 18 32 22 Z" fill="#0f172a"/>
+              <rect x="28" y="10" width="44" height="12" rx="2" fill="#0f172a"/>
               <!-- Rear Window -->
-              <path d="M 28 65 Q 50 70 72 65 L 68 78 Q 50 82 32 78 Z" fill="#0f172a"/>
+              <rect x="28" y="80" width="44" height="8" rx="1" fill="#0f172a"/>
+              <!-- Side Windows -->
+              <rect x="28" y="28" width="4" height="46" rx="1" fill="#0f172a" opacity="0.8"/>
+              <rect x="68" y="28" width="4" height="46" rx="1" fill="#0f172a" opacity="0.8"/>
+              <!-- Roof Details -->
+              <rect x="40" y="30" width="20" height="12" rx="2" fill="rgba(255,255,255,0.6)"/>
+              <rect x="40" y="55" width="20" height="12" rx="2" fill="rgba(255,255,255,0.6)"/>
               <!-- Headlights -->
-              <circle cx="33" cy="14" r="4" fill="#fef08a"/>
-              <circle cx="67" cy="14" r="4" fill="#fef08a"/>
+              <circle cx="32" cy="8" r="3" fill="#fef08a"/>
+              <circle cx="68" cy="8" r="3" fill="#fef08a"/>
               <!-- Taillights -->
-              <rect x="28" y="84" width="14" height="6" fill="#fca5a5" rx="2"/>
-              <rect x="58" y="84" width="14" height="6" fill="#fca5a5" rx="2"/>
+              <rect x="30" y="92" width="10" height="3" fill="#fca5a5" rx="1"/>
+              <rect x="60" y="92" width="10" height="3" fill="#fca5a5" rx="1"/>
             </svg>
           </div>
-          <div style="margin-top: 6px; background: ${color}; padding: 4px 12px; border-radius: 12px; color: white; font-family: monospace; font-size: 14px; font-weight: 900; white-space: nowrap; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.4);">
+          <div style="margin-top: 4px; background: ${color}; padding: 2px 8px; border-radius: 8px; color: ${textColor}; font-family: monospace; font-size: 11px; font-weight: 900; white-space: nowrap; border: 1.5px solid ${borderColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
             ${speed}
           </div>
         </div>
