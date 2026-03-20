@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { toast } from 'sonner'
+import { supabase } from '@/lib/supabase/client'
 
 interface GoogleMapsContextType {
   isLoaded: boolean
@@ -12,30 +13,54 @@ const GoogleMapsContext = createContext<GoogleMapsContextType | null>(null)
 export function GoogleMapsProvider({ children }: { children: ReactNode }) {
   const [isLoaded, setIsLoaded] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
-
-  const getApiKey = () => {
-    const keys = [
-      import.meta.env.VITE_GOOGLE_MAPS,
-      import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-      import.meta.env.VITE_GOOGLE_MAPS_KEY,
-    ]
-    for (const k of keys) {
-      if (k && typeof k === 'string' && k.trim() !== '' && k.trim() !== 'undefined') {
-        return k.trim()
-      }
-    }
-    return ''
-  }
-
-  const apiKey = getApiKey()
+  const [apiKey, setApiKey] = useState<string>('')
 
   useEffect(() => {
-    if (!apiKey) {
-      setLoadError(
-        'Aviso: Chave de API do Google Maps ausente ou inválida. O mapa operará em modo restrito.',
+    let mounted = true
+
+    async function fetchKey() {
+      const keys = [
+        import.meta.env.VITE_GOOGLE_MAPS,
+        import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+        import.meta.env.VITE_GOOGLE_MAPS_KEY,
+      ]
+
+      let foundKey = keys.find(
+        (k) => k && typeof k === 'string' && k.trim() !== '' && k.trim() !== 'undefined',
       )
-      return
+
+      if (!foundKey) {
+        try {
+          const { data, error } = await supabase.functions.invoke('get-maps-config')
+          if (!error && data?.apiKey) {
+            foundKey = data.apiKey.trim()
+          }
+        } catch (err) {
+          console.error('Failed to fetch maps config from edge function:', err)
+        }
+      }
+
+      if (!mounted) return
+
+      if (!foundKey) {
+        setLoadError(
+          'Aviso: Chave de API do Google Maps ausente nos secrets e variáveis de ambiente.',
+        )
+        return
+      }
+
+      setApiKey(foundKey)
     }
+
+    fetchKey()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!apiKey) return
 
     if (window.google?.maps?.marker) {
       setIsLoaded(true)
@@ -44,6 +69,9 @@ export function GoogleMapsProvider({ children }: { children: ReactNode }) {
 
     const scriptId = 'google-maps-api-script'
     if (document.getElementById(scriptId)) {
+      if (window.google?.maps?.marker) {
+        setIsLoaded(true)
+      }
       return
     }
 
