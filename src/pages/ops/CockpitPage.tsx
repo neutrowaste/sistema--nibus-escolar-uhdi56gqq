@@ -141,7 +141,6 @@ export default function CockpitPage() {
       }
     })
 
-    const stopSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" rx="6" fill="#10b981" stroke="white" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="white"/></svg>`
     const maintSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><rect width="28" height="28" rx="6" fill="#f59e0b" stroke="white" stroke-width="2"/><path d="M16 12l-4 4m0-4l4 4" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>`
 
     const createIconElement = (svg: string) => {
@@ -150,16 +149,6 @@ export default function CockpitPage() {
       return el
     }
 
-    stopsMarkersRef.current = [
-      new window.google.maps.marker.AdvancedMarkerElement({
-        position: { lat: -23.565414, lng: -46.654881 },
-        content: createIconElement(stopSvg),
-      }),
-      new window.google.maps.marker.AdvancedMarkerElement({
-        position: { lat: -23.578416, lng: -46.655633 },
-        content: createIconElement(stopSvg),
-      }),
-    ]
     maintenanceMarkersRef.current = [
       new window.google.maps.marker.AdvancedMarkerElement({
         position: { lat: -23.581416, lng: -46.651633 },
@@ -215,13 +204,18 @@ export default function CockpitPage() {
 
       const color = isAlert ? '#ef4444' : '#2563eb'
       const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="14" fill="${color}" stroke="white" stroke-width="2" />
-          <rect x="25" y="15" width="50" height="20" fill="black" rx="4" />
-          <text x="50" y="29" font-family="monospace" font-size="12" fill="white" font-weight="bold" text-anchor="middle">${speed}</text>
-          <rect x="35" y="70" width="30" height="16" fill="black" rx="4" />
-          <text x="50" y="82" font-family="sans-serif" font-size="10" fill="white" font-weight="bold" text-anchor="middle">BUS</text>
-        </svg>
+        <div style="background-color: ${color}; padding: 8px; border-radius: 12px; border: 3px solid white; box-shadow: 0 6px 12px rgba(0,0,0,0.3); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; transform: translateY(-50%);">
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 6v6"/>
+            <path d="M15 6v6"/>
+            <path d="M2 12h19.6"/>
+            <path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/>
+            <circle cx="7" cy="18" r="2"/>
+            <path d="M9 18h5"/>
+            <circle cx="16" cy="18" r="2"/>
+          </svg>
+          <div style="background: rgba(0,0,0,0.25); padding: 2px 8px; border-radius: 6px; color: white; font-family: monospace; font-size: 14px; font-weight: bold;">${speed}</div>
+        </div>
       `
 
       let el = busMarkerInstance.current.content as HTMLElement
@@ -230,7 +224,6 @@ export default function CockpitPage() {
         busMarkerInstance.current.content = el
       }
       el.innerHTML = svg
-      el.style.transform = 'translate(0, -50%)'
 
       busMarkerInstance.current.position = path[safeIndex]
     },
@@ -307,6 +300,36 @@ export default function CockpitPage() {
 
     drawRoute(wp, true)
 
+    // Clear old stops markers
+    stopsMarkersRef.current.forEach((m) => {
+      if (m) m.map = null
+    })
+    stopsMarkersRef.current = []
+
+    // Create new numbered checkpoints for the waypoints
+    if (window.google?.maps?.marker) {
+      stopsMarkersRef.current = wp.map((p: any, i: number) => {
+        const el = document.createElement('div')
+        el.innerHTML = `
+          <div style="background-color: white; border: 2px solid #3b82f6; border-radius: 8px; padding: 4px; box-shadow: 0 4px 6px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; min-width: 32px;">
+            <div style="background-color: #3b82f6; color: white; border-radius: 4px; width: 100%; text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 2px;">
+              ${i + 1}
+            </div>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
+              <circle cx="12" cy="10" r="3"></circle>
+            </svg>
+          </div>
+        `
+        return new window.google.maps.marker.AdvancedMarkerElement({
+          position: p,
+          map: layers.stops && viewMode !== 'routes' ? mapInstance.current : null,
+          content: el,
+          zIndex: 40,
+        })
+      })
+    }
+
     if (viewMode === 'live') {
       liveProgressRef.current = 0
       setLiveAlerts([])
@@ -315,7 +338,7 @@ export default function CockpitPage() {
       setPlaybackProgress(0)
       updateBusPosition(0, false, 'Histórico')
     }
-  }, [viewMode, selectedDate, drawRoute, updateBusPosition])
+  }, [viewMode, selectedDate, drawRoute, updateBusPosition, layers.stops])
 
   const startLiveSimulation = useCallback(() => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
@@ -593,7 +616,7 @@ export default function CockpitPage() {
                     },
                     {
                       key: 'stops',
-                      label: 'Pontos Genéricos',
+                      label: 'Pontos de Coleta',
                       icon: MapPin,
                       color: 'text-emerald-500',
                       disabled: viewMode === 'routes',
