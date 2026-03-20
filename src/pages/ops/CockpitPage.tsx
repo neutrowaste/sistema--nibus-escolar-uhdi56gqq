@@ -86,6 +86,7 @@ export default function CockpitPage() {
 
   const liveProgressRef = useRef(0)
   const lastAlertRef = useRef(0)
+  const lastHeadingRef = useRef(0)
   const animationFrameRef = useRef<number | null>(null)
 
   // Route Editing State
@@ -199,29 +200,74 @@ export default function CockpitPage() {
   const updateBusPosition = useCallback(
     (index: number, isAlert: boolean = false, speed: string = '45 km/h') => {
       const path = routePathRef.current
-      if (!path || path.length === 0 || !busMarkerInstance.current) return
-      const safeIndex = Math.min(Math.max(0, Math.floor(index)), path.length - 1)
+      if (!path || path.length === 0 || !busMarkerInstance.current || !window.google?.maps) return
 
-      const color = isAlert ? '#ef4444' : '#2563eb'
+      const floorIdx = Math.floor(index)
+      const ceilIdx = Math.min(floorIdx + 1, path.length - 1)
+      const currentPos = path[floorIdx]
+      const nextPos = path[ceilIdx]
+
+      const getLatLng = (p: any) =>
+        typeof p.lat === 'function' ? p : new window.google.maps.LatLng(p.lat, p.lng)
+
+      let heading = lastHeadingRef.current
+      let currentLatLng = getLatLng(currentPos)
+
+      if (window.google.maps.geometry?.spherical && floorIdx !== ceilIdx) {
+        const nextLatLng = getLatLng(nextPos)
+
+        if (currentLatLng.lat() !== nextLatLng.lat() || currentLatLng.lng() !== nextLatLng.lng()) {
+          heading = window.google.maps.geometry.spherical.computeHeading(currentLatLng, nextLatLng)
+          lastHeadingRef.current = heading
+        }
+
+        const fraction = index - floorIdx
+        if (fraction > 0) {
+          currentLatLng = window.google.maps.geometry.spherical.interpolate(
+            currentLatLng,
+            nextLatLng,
+            fraction,
+          )
+        }
+      }
+
+      const color = isAlert ? '#ef4444' : '#3b82f6'
+      const shadow = isAlert ? '0 0 20px rgba(239,68,68,0.9)' : '0 4px 10px rgba(0,0,0,0.5)'
+
       const svg = `
-        <div style="background-color: ${color}; padding: 8px 12px; border-radius: 12px; border: 3px solid white; box-shadow: 0 6px 12px rgba(0,0,0,0.3); display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 8px; transform: translateY(-50%); transition: background-color 0.3s ease;">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2a3 3 0 0 0 6 0h2a3 3 0 0 0 6 0z"/>
-            <circle cx="7" cy="17" r="2"/>
-            <circle cx="17" cy="17" r="2"/>
-          </svg>
-          <div style="background: rgba(0,0,0,0.25); padding: 2px 6px; border-radius: 6px; color: white; font-family: monospace; font-size: 14px; font-weight: bold; white-space: nowrap;">${speed}</div>
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; transform: translate(0, -50%); z-index: 1000; pointer-events: none;">
+          <div style="transform: rotate(${heading}deg); transition: transform 0.1s linear; transform-origin: center center;">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="64" height="64" style="filter: drop-shadow(${shadow});">
+              <!-- Vehicle Body -->
+              <rect x="25" y="10" width="50" height="80" rx="12" fill="${color}" stroke="white" stroke-width="4"/>
+              <!-- Vehicle Roof -->
+              <rect x="30" y="40" width="40" height="20" rx="4" fill="rgba(255,255,255,0.2)"/>
+              <!-- Front Windshield -->
+              <path d="M 28 35 Q 50 30 72 35 L 68 22 Q 50 18 32 22 Z" fill="#0f172a"/>
+              <!-- Rear Window -->
+              <path d="M 28 65 Q 50 70 72 65 L 68 78 Q 50 82 32 78 Z" fill="#0f172a"/>
+              <!-- Headlights -->
+              <circle cx="33" cy="14" r="4" fill="#fef08a"/>
+              <circle cx="67" cy="14" r="4" fill="#fef08a"/>
+              <!-- Taillights -->
+              <rect x="28" y="84" width="14" height="6" fill="#fca5a5" rx="2"/>
+              <rect x="58" y="84" width="14" height="6" fill="#fca5a5" rx="2"/>
+            </svg>
+          </div>
+          <div style="margin-top: 6px; background: ${color}; padding: 4px 12px; border-radius: 12px; color: white; font-family: monospace; font-size: 14px; font-weight: 900; white-space: nowrap; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.4);">
+            ${speed}
+          </div>
         </div>
       `
 
       let el = busMarkerInstance.current.content as HTMLElement
-      if (!el) {
+      if (!el || el.tagName.toLowerCase() !== 'div') {
         el = document.createElement('div')
         busMarkerInstance.current.content = el
       }
       el.innerHTML = svg
 
-      busMarkerInstance.current.position = path[safeIndex]
+      busMarkerInstance.current.position = currentLatLng
     },
     [],
   )
@@ -302,16 +348,16 @@ export default function CockpitPage() {
     })
     stopsMarkersRef.current = []
 
-    // Create new numbered checkpoints for the waypoints
+    // Create new detailed numbered checkpoints for the waypoints
     if (window.google?.maps?.marker) {
       stopsMarkersRef.current = wp.map((p: any, i: number) => {
         const el = document.createElement('div')
         el.innerHTML = `
-          <div style="background-color: white; border: 2px solid #3b82f6; border-radius: 8px; padding: 4px; box-shadow: 0 4px 6px rgba(0,0,0,0.2); display: flex; flex-direction: column; align-items: center; min-width: 32px;">
-            <div style="background-color: #3b82f6; color: white; border-radius: 4px; width: 100%; text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 2px;">
-              ${i + 1}
+          <div style="background-color: white; border: 3px solid #10b981; border-radius: 12px; padding: 6px; box-shadow: 0 6px 12px rgba(0,0,0,0.3); display: flex; flex-direction: column; align-items: center; min-width: 50px; transform: translate(0, -50%);">
+            <div style="background-color: #10b981; color: white; border-radius: 6px; width: 100%; text-align: center; font-size: 15px; font-weight: 900; margin-bottom: 4px; padding: 2px 6px; white-space: nowrap; text-transform: uppercase;">
+              Ponto ${i + 1}
             </div>
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path>
               <circle cx="12" cy="10" r="3"></circle>
             </svg>
@@ -329,6 +375,8 @@ export default function CockpitPage() {
     if (viewMode === 'live') {
       liveProgressRef.current = 0
       setLiveAlerts([])
+      // Force initial render of the bus to immediately show the car SVG instead of nothing
+      updateBusPosition(0, false, '45 km/h')
     } else {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
       setPlaybackProgress(0)
@@ -345,8 +393,8 @@ export default function CockpitPage() {
       const path = routePathRef.current
       if (path && path.length > 0) {
         const now = Date.now()
-        if (now - lastTime > 100) {
-          liveProgressRef.current = (liveProgressRef.current + 0.5) % path.length
+        if (now - lastTime > 60) {
+          liveProgressRef.current = (liveProgressRef.current + 0.15) % path.length
           const pos = path[Math.floor(liveProgressRef.current)]
 
           let inRiskZone = false
