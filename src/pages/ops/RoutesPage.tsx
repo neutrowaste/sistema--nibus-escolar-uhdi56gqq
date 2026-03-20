@@ -42,6 +42,7 @@ export default function RoutesPage() {
   const polylineInstance = useRef<any>(null)
   const markersRef = useRef<any[]>([])
   const initialBoundsFit = useRef(false)
+  const [mapReady, setMapReady] = useState(false)
 
   const loadData = () => {
     setIsLoading(true)
@@ -56,9 +57,26 @@ export default function RoutesPage() {
   }, [])
 
   useEffect(() => {
-    if (!isModalOpen || !isLoaded || !mapRef.current) return
+    if (!isModalOpen) {
+      initialBoundsFit.current = false
+      mapInstance.current = null
+      directionsService.current = null
+      directionsRenderer.current = null
+      polylineInstance.current = null
+      markersRef.current = []
+      setMapReady(false)
+      return
+    }
 
-    if (!mapInstance.current && window.google?.maps) {
+    if (!isLoaded) return
+
+    let intervalId: any
+
+    const initMap = () => {
+      if (mapInstance.current || !window.google?.maps) return true // already initialized
+
+      if (!mapRef.current) return false
+
       mapInstance.current = new window.google.maps.Map(mapRef.current, {
         center: { lat: -23.561414, lng: -46.655881 },
         zoom: 14,
@@ -103,22 +121,26 @@ export default function RoutesPage() {
           return { ...prev, checkpoints: [...cps, newCp] }
         })
       })
+
+      setMapReady(true)
+      return true
+    }
+
+    if (!initMap()) {
+      intervalId = setInterval(() => {
+        if (initMap()) {
+          clearInterval(intervalId)
+        }
+      }, 100)
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId)
     }
   }, [isModalOpen, isLoaded])
 
   useEffect(() => {
-    if (!isModalOpen) {
-      initialBoundsFit.current = false
-      mapInstance.current = null
-      directionsService.current = null
-      directionsRenderer.current = null
-      polylineInstance.current = null
-      markersRef.current = []
-    }
-  }, [isModalOpen])
-
-  useEffect(() => {
-    if (!mapInstance.current || !formData.checkpoints || !window.google?.maps) return
+    if (!mapReady || !mapInstance.current || !formData.checkpoints || !window.google?.maps) return
 
     const path = formData.checkpoints.map((cp) => ({ lat: cp.lat, lng: cp.lng }))
 
@@ -170,7 +192,7 @@ export default function RoutesPage() {
       directionsRenderer.current?.setDirections({ routes: [] })
       polylineInstance.current?.setPath(path)
     }
-  }, [formData.checkpoints])
+  }, [formData.checkpoints, mapReady])
 
   const handleSave = async () => {
     if (!formData.name || !formData.vehiclePlate)
