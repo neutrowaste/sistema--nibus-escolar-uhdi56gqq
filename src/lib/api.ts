@@ -89,6 +89,27 @@ export interface Incident {
   status: 'Ativa' | 'Arquivada'
 }
 
+export interface SystemDocument {
+  id: string
+  title: string
+  type: string
+  entityType: 'vehicle' | 'driver'
+  entityId: string
+  issueDate: string
+  expiryDate: string
+  status: 'Valid' | 'Expiring' | 'Expired'
+}
+
+export interface MaintenanceTask {
+  id: string
+  vehicleId: string
+  type: string
+  description: string
+  dueDate: string
+  thresholdMileage?: number
+  status: 'Pendente' | 'Em Andamento' | 'Concluída'
+}
+
 let mockDrivers: Driver[] = [
   {
     id: 'd1',
@@ -108,7 +129,7 @@ let mockRoutes: Route[] = [
     name: 'Rota Norte',
     startPoint: 'Escola',
     endPoint: 'Bairro',
-    driver: 'João',
+    driver: 'João Mendes',
     vehiclePlate: 'ABC-1234',
     stops: 2,
     status: 'Em Andamento',
@@ -145,10 +166,36 @@ let mockIncidents: Incident[] = [
     status: 'Ativa',
   },
 ]
+let mockConversations: Conversation[] = [
+  {
+    id: 'c1',
+    parentName: 'Ana Silva',
+    studentName: 'Lucas Silva',
+    unread: 1,
+    messages: [
+      {
+        id: 'm1',
+        sender: 'parent',
+        text: 'Bom dia, o Lucas não vai hoje.',
+        timestamp: new Date().toISOString(),
+      },
+    ],
+  },
+]
 
 export const api = {
-  drivers: { list: async () => [...mockDrivers] },
-  vehicles: { list: async () => [...mockVehicles] },
+  drivers: {
+    list: async () => [...mockDrivers],
+    add: async (d: Partial<Driver>) => true,
+    update: async (id: string, d: Partial<Driver>) => true,
+    delete: async (id: string) => true,
+  },
+  vehicles: {
+    list: async () => [...mockVehicles],
+    add: async (v: Partial<Vehicle>) => true,
+    update: async (id: string, v: Partial<Vehicle>) => true,
+    delete: async (id: string) => true,
+  },
   routes: {
     list: async () => [...mockRoutes],
     add: async (r: Partial<Route>) => {
@@ -189,8 +236,68 @@ export const api = {
     updateSetting: async (id: string, val: any) => true,
   },
   chat: {
-    getConversations: async () => [],
-    sendMessage: async () =>
-      ({ id: '1', sender: 'parent', text: 'ok', timestamp: '' }) as ChatMessage,
+    getConversations: async () => [...mockConversations],
+    sendMessage: async (convId: string, text: string, sender: 'admin' | 'parent') => {
+      const newMsg = {
+        id: Math.random().toString(),
+        sender,
+        text,
+        timestamp: new Date().toISOString(),
+      }
+      const conv = mockConversations.find((c) => c.id === convId)
+      if (conv) conv.messages.push(newMsg)
+      return newMsg
+    },
+    markAsRead: async (convId: string) => {
+      const conv = mockConversations.find((c) => c.id === convId)
+      if (conv) conv.unread = 0
+      return true
+    },
+  },
+  history: {
+    // Returns waypoints to be snapped to roads by Directions API
+    getTrajectory: async (date: string, vehicleId: string) => [
+      { lat: -23.561414, lng: -46.655881 }, // Paulista Ave
+      { lat: -23.573416, lng: -46.653633 }, // Brigadeiro Luis Antonio
+      { lat: -23.587416, lng: -46.657633 }, // Ibirapuera
+    ],
+  },
+  performance: {
+    getMetrics: async () => ({
+      occupancy: [
+        { route: 'Rota Norte', rate: 85 },
+        { route: 'Rota Sul', rate: 60 },
+      ],
+      punctuality: [
+        { day: 'Seg', onTime: 90, delayed: 10 },
+        { day: 'Ter', onTime: 85, delayed: 15 },
+      ],
+      fuelData: [
+        { route: 'Rota Norte', distance: 120 },
+        { route: 'Rota Sul', distance: 85 },
+      ],
+    }),
+  },
+  biometrics: {
+    requestPresignedUrl: async (id: string, fileName: string) => ({
+      uploadUrl: 'https://mock-s3-url.com/upload',
+    }),
+    processImage: async (url: string) => {
+      await delay(1500)
+      return { status: 'MATCH', confidence: 0.98 }
+    },
+  },
+  documents: {
+    list: async () => [],
+    add: async (d: Partial<SystemDocument>) => true,
+    delete: async (id: string) => true,
+  },
+  maintenance: {
+    list: async () => [],
+    add: async (d: Partial<MaintenanceTask>) => true,
+    update: async (id: string, d: Partial<MaintenanceTask>) => true,
+  },
+  users: {
+    list: async () => [],
   },
 }

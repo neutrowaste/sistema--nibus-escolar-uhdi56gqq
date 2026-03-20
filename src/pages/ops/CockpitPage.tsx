@@ -1,6 +1,5 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Card } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
@@ -8,55 +7,232 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
-import {
-  Activity,
-  MapPin,
-  Filter,
-  Play,
-  Pause,
-  FastForward,
-  History,
-  AlertCircle,
-} from 'lucide-react'
-import { useOfflineSync } from '@/contexts/OfflineSyncContext'
+import { Activity, MapPin, Play, Pause, History, AlertCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { api } from '@/lib/api'
-import { format } from 'date-fns'
+
+// Define window interface to avoid TS errors
+declare global {
+  interface Window {
+    google: any
+  }
+}
 
 export default function CockpitPage() {
   const [viewMode, setViewMode] = useState('live') // 'live' or 'history'
-  const [telemetry, setTelemetry] = useState({ lat: 100, lng: 100, speed: 45 })
-  const { isOnline } = useOfflineSync()
   const [liveAlerts, setLiveAlerts] = useState<
     { id: number; msg: string; time: string; type: 'alert' | 'warning' }[]
   >([])
 
+  // Maps specific state & refs
+  const mapRef = useRef<HTMLDivElement>(null)
+  const mapInstance = useRef<any>(null)
+  const polylineInstance = useRef<any>(null)
+  const busMarkerInstance = useRef<any>(null)
+  const infoWindowInstance = useRef<any>(null)
+  const alertMarkersRef = useRef<any[]>([])
+
+  const routePathRef = useRef<any[]>([])
+  const [pathLength, setPathLength] = useState(0)
+
   // History State
-  const [historyData, setHistoryData] = useState<any[]>([])
   const [isPlaying, setIsPlaying] = useState(false)
   const [playbackProgress, setPlaybackProgress] = useState(0)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
 
+  // Live state refs
+  const liveProgressRef = useRef(0)
   const lastAlertRef = useRef({ deviation: 0, stop: 0 })
+  const animationFrameRef = useRef<number | null>(null)
 
-  // Live Simulation
+  const loadGoogleMaps = useCallback(() => {
+    return new Promise<void>((resolve) => {
+      if (window.google?.maps) {
+        resolve()
+        return
+      }
+      const script = document.createElement('script')
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}&libraries=geometry`
+      script.async = true
+      script.defer = true
+      script.onload = () => resolve()
+      script.onerror = () => toast.error('Erro ao carregar Google Maps')
+      document.head.appendChild(script)
+    })
+  }, [])
+
+  const initMap = useCallback(() => {
+    if (!mapRef.current || mapInstance.current || !window.google) return
+
+    mapInstance.current = new window.google.maps.Map(mapRef.current, {
+      center: { lat: -23.561414, lng: -46.655881 },
+      zoom: 14,
+      mapTypeId: 'roadmap',
+      disableDefaultUI: true,
+      zoomControl: true,
+      styles: [
+        { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+        { featureType: 'transit', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+      ],
+    })
+
+    polylineInstance.current = new window.google.maps.Polyline({
+      map: mapInstance.current,
+      path: [],
+      strokeColor: '#3b82f6',
+      strokeOpacity: 0.8,
+      strokeWeight: 6,
+    })
+
+    busMarkerInstance.current = new window.google.maps.Marker({
+      map: mapInstance.current,
+      icon: {
+        path: window.google.maps.SymbolPath.CIRCLE,
+        scale: 8,
+        fillColor: '#2563eb',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 3,
+      },
+      title: 'Veículo Escolar',
+      zIndex: 100,
+    })
+
+    infoWindowInstance.current = new window.google.maps.InfoWindow({
+      content: `
+        <div style="padding: 4px; font-family: sans-serif;">
+          <h3 style="font-weight: bold; font-size: 14px; margin:0 0 4px 0;">Veículo ABC-1234</h3>
+          <p style="font-size: 12px; color: #64748b; margin:0;">Motorista: João Mendes</p>
+          <p style="font-size: 12px; color: #64748b; margin:0;">Rota: Rota Norte</p>
+          <p style="font-size: 12px; color: #64748b; margin:0;">Alunos: 18/20</p>
+          <span style="display:inline-block; margin-top:6px; background:#dbeafe; color:#1e40af; font-size:10px; padding:2px 6px; border-radius:4px; border: 1px solid #bfdbfe;">Em Rota</span>
+        </div>
+      `,
+    })
+
+    busMarkerInstance.current.addListener('click', () => {
+      infoWindowInstance.current.open(mapInstance.current, busMarkerInstance.current)
+    })
+  }, [])
+
+  const fetchDirectionsAndSnap = async (waypoints: { lat: number; lng: number }[]) => {
+    if (!window.google) return []
+    return new Promise<any[]>((resolve) => {
+      const directionsService = new window.google.maps.DirectionsService()
+      const origin = waypoints[0]
+      const destination = waypoints[waypoints.length - 1]
+      const waypts = waypoints.slice(1, -1).map((p) => ({ location: p, stopover: true }))
+
+      directionsService.route(
+        {
+          origin,
+          destination,
+          waypoints: waypts,
+          travelMode: window.google.maps.TravelMode.DRIVING,
+        },
+        (result: any, status: string) => {
+          if (status === 'OK' && result) {
+            resolve(result.routes[0].overview_path)
+          } else {
+            // Fallback to straight lines if API key is missing/restricted
+            resolve(waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng)))
+          }
+        },
+      )
+    })
+  }
+
+  const clearAlertsMap = () => {
+    alertMarkersRef.current.forEach((m) => m.setMap(null))
+    alertMarkersRef.current = []
+  }
+
+  // Load Map & Initial Data
   useEffect(() => {
-    if (viewMode !== 'live') return
-    let p = 0
-    const interval = setInterval(() => {
-      p += 0.005
-      if (p > 1) p = 0
-      setTelemetry((prev) => {
-        const nextLng = p < 0.5 ? 100 + 300 * p * 2 : 400 + 400 * (p - 0.5) * 2
-        const nextLat = p < 0.5 ? 100 + 200 * p * 2 : 300 + 100 * (p - 0.5) * 2
-        const speed = Math.max(0, 45 + (Math.random() * 20 - 5))
+    loadGoogleMaps().then(() => {
+      initMap()
+      loadRouteData()
+    })
+    return () => {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+    }
+  }, [loadGoogleMaps, initMap])
 
-        const now = Date.now()
-        // Simulate Deviation Alert
-        if (p > 0.45 && p < 0.55 && now - lastAlertRef.current.deviation > 30000) {
+  // Reload route when viewMode changes
+  useEffect(() => {
+    if (mapInstance.current) {
+      loadRouteData()
+    }
+  }, [viewMode, selectedDate])
+
+  const loadRouteData = async () => {
+    // Generate some waypoints depending on mode to show different paths
+    const waypoints =
+      viewMode === 'live'
+        ? [
+            { lat: -23.561414, lng: -46.655881 },
+            { lat: -23.573416, lng: -46.653633 },
+            { lat: -23.587416, lng: -46.657633 },
+          ]
+        : await api.history.getTrajectory(selectedDate, 'v1')
+
+    const path = await fetchDirectionsAndSnap(waypoints)
+    routePathRef.current = path
+    setPathLength(path.length)
+
+    if (polylineInstance.current) polylineInstance.current.setPath(path)
+
+    if (path.length > 0) {
+      const bounds = new window.google.maps.LatLngBounds()
+      path.forEach((p: any) => bounds.extend(p))
+      mapInstance.current.fitBounds(bounds)
+
+      // Reset animations
+      if (viewMode === 'live') {
+        liveProgressRef.current = 0
+        setLiveAlerts([])
+        clearAlertsMap()
+        startLiveSimulation()
+      } else {
+        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+        setPlaybackProgress(0)
+        updateBusPosition(0)
+      }
+    }
+  }
+
+  const updateBusPosition = (index: number) => {
+    const path = routePathRef.current
+    if (!path || path.length === 0 || !busMarkerInstance.current) return
+    const safeIndex = Math.min(Math.max(0, Math.floor(index)), path.length - 1)
+    busMarkerInstance.current.setPosition(path[safeIndex])
+  }
+
+  const startLiveSimulation = () => {
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+
+    let lastTime = Date.now()
+
+    const animate = () => {
+      const path = routePathRef.current
+      if (!path || path.length === 0 || viewMode !== 'live') return
+
+      const now = Date.now()
+      if (now - lastTime > 100) {
+        // Update every 100ms
+        liveProgressRef.current += 0.5 // Speed of simulation
+        if (liveProgressRef.current >= path.length) liveProgressRef.current = 0
+
+        updateBusPosition(liveProgressRef.current)
+
+        // Random Alerts Simulation
+        const pRatio = liveProgressRef.current / path.length
+        if (pRatio > 0.45 && pRatio < 0.55 && now - lastAlertRef.current.deviation > 30000) {
+          const pos = path[Math.floor(liveProgressRef.current)]
+          addMapAlert(pos, 'Desvio de Rota Crítico Detectado')
           setLiveAlerts((la) =>
             [
               {
@@ -71,62 +247,60 @@ export default function CockpitPage() {
           toast.error('Alerta de Desvio Detectado!')
           lastAlertRef.current.deviation = now
         }
-        // Simulate Long Stop Alert
-        if (speed < 5 && now - lastAlertRef.current.stop > 40000) {
-          setLiveAlerts((la) =>
-            [
-              {
-                id: now,
-                msg: 'Parada Indevida (>5min) fora de checkpoint.',
-                time: new Date().toLocaleTimeString(),
-                type: 'warning',
-              },
-              ...la,
-            ].slice(0, 5),
-          )
-          lastAlertRef.current.stop = now
-        }
 
-        return { lng: nextLng, lat: nextLat, speed }
-      })
-    }, 500)
-    return () => clearInterval(interval)
-  }, [viewMode])
-
-  // History Playback
-  useEffect(() => {
-    if (viewMode === 'history') {
-      api.history.getTrajectory(selectedDate, 'v1').then((data) => setHistoryData(data))
+        lastTime = now
+      }
+      animationFrameRef.current = requestAnimationFrame(animate)
     }
-  }, [viewMode, selectedDate])
 
-  useEffect(() => {
-    if (!isPlaying || historyData.length === 0) return
-    const interval = setInterval(() => {
-      setPlaybackProgress((prev) => {
-        if (prev >= 100) {
-          setIsPlaying(false)
-          return 100
-        }
-        return prev + 1
-      })
-    }, 100)
-    return () => clearInterval(interval)
-  }, [isPlaying, historyData])
-
-  const getHistoryPoint = () => {
-    if (historyData.length < 2) return { lat: 100, lng: 100 }
-    const idx = Math.min(
-      Math.floor((playbackProgress / 100) * (historyData.length - 1)),
-      historyData.length - 2,
-    )
-    const p1 = historyData[idx]
-    const p2 = historyData[idx + 1]
-    const localP = (playbackProgress / 100) * (historyData.length - 1) - idx
-    return { lat: p1.lat + (p2.lat - p1.lat) * localP, lng: p1.lng + (p2.lng - p1.lng) * localP }
+    animate()
   }
 
-  const hPoint = getHistoryPoint()
+  const addMapAlert = (position: any, title: string) => {
+    if (!window.google) return
+    const marker = new window.google.maps.Marker({
+      position,
+      map: mapInstance.current,
+      icon: {
+        path: window.google.maps.SymbolPath.CIRCLE,
+        scale: 6,
+        fillColor: '#ef4444',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 2,
+      },
+      title,
+    })
+    alertMarkersRef.current.push(marker)
+  }
+
+  // Handle Playback Slider & Auto-play
+  useEffect(() => {
+    if (viewMode === 'live') return
+
+    const path = routePathRef.current
+    if (!path || path.length === 0) return
+
+    if (isPlaying) {
+      const interval = setInterval(() => {
+        setPlaybackProgress((prev) => {
+          if (prev >= 100) {
+            setIsPlaying(false)
+            return 100
+          }
+          return prev + 1
+        })
+      }, 100)
+      return () => clearInterval(interval)
+    }
+  }, [isPlaying, viewMode, pathLength])
+
+  useEffect(() => {
+    if (viewMode === 'history' && pathLength > 0) {
+      const index = (playbackProgress / 100) * (pathLength - 1)
+      updateBusPosition(index)
+    }
+  }, [playbackProgress, viewMode, pathLength])
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col lg:flex-row space-y-4 lg:space-y-0 lg:space-x-4 animate-fade-in">
@@ -135,7 +309,7 @@ export default function CockpitPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Cockpit Operacional</h1>
             <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <MapPin className="h-4 w-4" /> Monitoramento Avançado
+              <MapPin className="h-4 w-4" /> Monitoramento Avançado com Google Maps
             </p>
           </div>
           <Tabs value={viewMode} onValueChange={setViewMode} className="w-auto">
@@ -150,69 +324,18 @@ export default function CockpitPage() {
           </Tabs>
         </div>
 
-        <Card className="flex-1 relative overflow-hidden bg-slate-100 border-2 border-slate-200 shadow-inner rounded-xl">
-          <svg
-            className="absolute inset-0 w-full h-full pointer-events-none drop-shadow-md"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            {viewMode === 'live' ? (
-              <>
-                <path
-                  d="M 100 100 L 400 300 L 800 400"
-                  fill="none"
-                  stroke="#cbd5e1"
-                  strokeWidth="6"
-                  strokeLinecap="round"
-                />
-                <path
-                  d={`M 100 100 L ${telemetry.lng} ${telemetry.lat}`}
-                  fill="none"
-                  stroke="#3b82f6"
-                  strokeWidth="6"
-                  strokeLinecap="round"
-                />
-                <circle
-                  cx={telemetry.lng}
-                  cy={telemetry.lat}
-                  r="8"
-                  fill="#2563eb"
-                  stroke="#fff"
-                  strokeWidth="3"
-                />
-                <circle
-                  cx={telemetry.lng}
-                  cy={telemetry.lat}
-                  r="20"
-                  fill="#3b82f6"
-                  opacity="0.2"
-                  className="animate-ping"
-                />
-              </>
-            ) : (
-              <>
-                {historyData.length > 0 && (
-                  <path
-                    d={`M ${historyData.map((p) => `${p.lng} ${p.lat}`).join(' L ')}`}
-                    fill="none"
-                    stroke="#94a3b8"
-                    strokeWidth="4"
-                    strokeDasharray="8 8"
-                  />
-                )}
-                {historyData.length > 0 && (
-                  <circle
-                    cx={hPoint.lng}
-                    cy={hPoint.lat}
-                    r="10"
-                    fill="#f59e0b"
-                    stroke="#fff"
-                    strokeWidth="3"
-                    className="shadow-lg"
-                  />
-                )}
-              </>
-            )}
-          </svg>
+        <Card className="flex-1 relative overflow-hidden border-2 border-slate-200 shadow-inner rounded-xl">
+          {/* Map Container */}
+          <div ref={mapRef} className="absolute inset-0 w-full h-full bg-slate-100" />
+
+          {!window.google && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-100/80 backdrop-blur-sm z-10">
+              <div className="flex flex-col items-center text-slate-500">
+                <Activity className="w-8 h-8 animate-spin mb-2" />
+                <p>Inicializando Motor de Mapas...</p>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
 
@@ -221,7 +344,7 @@ export default function CockpitPage() {
           <Card className="p-0 flex-1 flex flex-col overflow-hidden">
             <div className="p-4 border-b bg-slate-50">
               <h3 className="font-semibold flex items-center text-slate-800">
-                <Activity className="w-4 h-4 mr-2 text-blue-500" /> Feed de Alertas em Tempo Real
+                <Activity className="w-4 h-4 mr-2 text-blue-500" /> Feed de Alertas (Tempo Real)
               </h3>
             </div>
             <div className="flex-1 overflow-auto p-4 space-y-3">
@@ -292,7 +415,10 @@ export default function CockpitPage() {
                 <div className="pt-2">
                   <Slider
                     value={[playbackProgress]}
-                    onValueChange={(v) => setPlaybackProgress(v[0])}
+                    onValueChange={(v) => {
+                      setPlaybackProgress(v[0])
+                      setIsPlaying(false)
+                    }}
                     max={100}
                     step={1}
                   />
