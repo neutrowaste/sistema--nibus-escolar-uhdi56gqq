@@ -41,6 +41,20 @@ declare global {
   }
 }
 
+const getGoogleMapsApiKey = () => {
+  const keys = [
+    import.meta.env.VITE_GOOGLE_MAPS,
+    import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+    import.meta.env.VITE_GOOGLE_MAPS_KEY,
+  ]
+  for (const k of keys) {
+    if (k && typeof k === 'string' && k.trim() !== '' && k.trim() !== 'undefined') {
+      return k.trim()
+    }
+  }
+  return ''
+}
+
 export default function CockpitPage() {
   const [viewMode, setViewMode] = useState('live')
   const [liveAlerts, setLiveAlerts] = useState<{ id: number; msg: string; time: string }[]>([])
@@ -77,14 +91,35 @@ export default function CockpitPage() {
   const animationFrameRef = useRef<number | null>(null)
 
   const loadGoogleMaps = useCallback(() => {
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       if (window.google?.maps) return resolve()
-      const script = document.createElement('script')
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}&libraries=geometry,drawing,marker`
+
+      const scriptId = 'google-maps-api-script'
+      let script = document.getElementById(scriptId) as HTMLScriptElement
+
+      if (script) {
+        script.addEventListener('load', () => resolve())
+        script.addEventListener('error', () => reject(new Error('Failed to load Google Maps')))
+        return
+      }
+
+      const apiKey = getGoogleMapsApiKey()
+      if (!apiKey) {
+        console.warn(
+          'Nenhuma chave do Google Maps foi encontrada nas variáveis de ambiente. Verifique VITE_GOOGLE_MAPS.',
+        )
+      }
+
+      script = document.createElement('script')
+      script.id = scriptId
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry,drawing,marker`
       script.async = true
       script.defer = true
       script.onload = () => resolve()
-      script.onerror = () => toast.error('Erro ao carregar Google Maps API')
+      script.onerror = () => {
+        toast.error('Erro ao carregar Google Maps API. Verifique sua conexão e chave.')
+        reject(new Error('Google Maps script error'))
+      }
       document.head.appendChild(script)
     })
   }, [])
@@ -94,9 +129,7 @@ export default function CockpitPage() {
       busDivRef.current = document.createElement('div')
       busDivRef.current.className = 'relative group cursor-pointer'
     }
-    const colorClass = isAlert
-      ? 'bg-red-600 animate-pulse-alert ring-4 ring-red-500/30'
-      : 'bg-blue-600'
+    const colorClass = isAlert ? 'bg-red-600 animate-pulse ring-4 ring-red-500/50' : 'bg-blue-600'
     busDivRef.current.innerHTML = `
       <div class="w-6 h-6 ${colorClass} border-2 border-white rounded-full flex items-center justify-center shadow-lg transition-colors">
          <svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.909.53l1.415 2.83M15 16h1a1 1 0 001-1v-4m-1-4h.01M10 18a2 2 0 100-4 2 2 0 000 4zm6 0a2 2 0 100-4 2 2 0 000 4z"/></svg>
@@ -118,7 +151,7 @@ export default function CockpitPage() {
   }, [])
 
   const initMap = useCallback(() => {
-    if (!mapRef.current || mapInstance.current || !window.google) return
+    if (!mapRef.current || mapInstance.current || !window.google?.maps) return
     mapInstance.current = new window.google.maps.Map(mapRef.current, {
       center: { lat: -23.561414, lng: -46.655881 },
       zoom: 14,
@@ -201,11 +234,17 @@ export default function CockpitPage() {
     }))
 
     try {
+      const apiKey = getGoogleMapsApiKey()
+      if (!apiKey) {
+        console.warn('API Key ausente para o computeRoutes. Usando fallback.')
+        return waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
+      }
+
       const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Goog-Api-Key': import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
+          'X-Goog-Api-Key': apiKey,
           'X-Goog-FieldMask': 'routes.polyline.encodedPath',
         },
         body: JSON.stringify({
@@ -332,13 +371,21 @@ export default function CockpitPage() {
   }, [viewMode, updateBusPosition])
 
   useEffect(() => {
-    loadGoogleMaps().then(() => {
-      initMap()
-      loadRouteData().then(() => {
-        if (viewMode === 'live') startLiveSimulation()
+    let mounted = true
+    loadGoogleMaps()
+      .then(() => {
+        if (!mounted) return
+        initMap()
+        loadRouteData().then(() => {
+          if (!mounted) return
+          if (viewMode === 'live') startLiveSimulation()
+        })
       })
-    })
+      .catch((e) => {
+        console.error('Falha ao carregar o ecossistema Google Maps', e)
+      })
     return () => {
+      mounted = false
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
     }
   }, [loadGoogleMaps, initMap, loadRouteData, startLiveSimulation, viewMode])
