@@ -1,8 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useAuth } from '@/contexts/AuthContext'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -17,7 +18,8 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>
 
 export default function Login() {
-  const { login } = useAuth()
+  const { login, user } = useAuth()
+  const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
 
   const {
@@ -27,6 +29,19 @@ export default function Login() {
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
   })
+
+  useEffect(() => {
+    if (user) {
+      navigate(
+        user.role === 'parent'
+          ? '/parents/portal'
+          : user.role === 'driver'
+            ? '/driver/portal'
+            : '/ops/cockpit',
+        { replace: true },
+      )
+    }
+  }, [user, navigate])
 
   const onSubmit = async (data: LoginForm) => {
     setIsLoading(true)

@@ -23,19 +23,23 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<UserSession | null>(null)
+  const [user, setUser] = useState<UserSession | null>(() => {
+    try {
+      const stored = localStorage.getItem('userSession')
+      return stored ? JSON.parse(stored) : null
+    } catch {
+      return null
+    }
+  })
   const [isLoading, setIsLoading] = useState(false)
   const navigate = useNavigate()
 
   const login = async (email: string, pass: string) => {
     setIsLoading(true)
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      await new Promise((resolve) => setTimeout(resolve, 800))
 
       if (email && pass) {
-        localStorage.setItem('orgId', 'org-8103')
-        localStorage.setItem('branchId', 'br-001')
-
         let userRole = 'admin'
         let userName = 'Admin Global'
         let perms = [
@@ -45,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           'action:edit',
           'page:dashboard:executive',
         ]
-        let redirectPath = '/ops/cockpit' // Redirect admin to Cockpit Dashboard
+        let redirectPath = '/ops/cockpit'
 
         if (email.includes('parent')) {
           userRole = 'parent'
@@ -59,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           redirectPath = '/driver/portal'
         }
 
-        setUser({
+        const sessionData = {
           id: userRole === 'admin' ? 'u-123' : userRole === 'parent' ? 'p-123' : 'd-123',
           name: userName,
           email: email,
@@ -68,25 +72,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           branchId: 'br-001',
           permissions: perms,
           role: userRole,
-        })
+        }
+
+        setUser(sessionData)
+        localStorage.setItem('userSession', JSON.stringify(sessionData))
         toast.success('Login efetuado com sucesso!')
-        navigate(redirectPath)
+        navigate(redirectPath, { replace: true })
       } else {
         throw new Error('Credenciais inválidas')
       }
     } catch (error: any) {
       toast.error(error.message || 'Erro ao fazer login')
-      throw error
     } finally {
       setIsLoading(false)
     }
   }
 
   const logout = () => {
-    localStorage.removeItem('orgId')
-    localStorage.removeItem('branchId')
+    localStorage.removeItem('userSession')
     setUser(null)
-    navigate('/login')
+    navigate('/login', { replace: true })
   }
 
   return (

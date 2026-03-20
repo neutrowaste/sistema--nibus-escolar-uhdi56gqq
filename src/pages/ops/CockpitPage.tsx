@@ -13,6 +13,7 @@ import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Dialog,
   DialogContent,
@@ -22,12 +23,12 @@ import {
 } from '@/components/ui/dialog'
 import {
   Activity,
-  MapPin,
   Play,
   Pause,
   History,
   AlertCircle,
   Layers,
+  MapPin,
   Wrench,
   TrafficCone,
 } from 'lucide-react'
@@ -41,17 +42,15 @@ declare global {
 }
 
 export default function CockpitPage() {
-  const [viewMode, setViewMode] = useState('live') // 'live' or 'history'
-  const [liveAlerts, setLiveAlerts] = useState<
-    { id: number; msg: string; time: string; type: 'alert' | 'warning' }[]
-  >([])
-
+  const [viewMode, setViewMode] = useState('live')
+  const [liveAlerts, setLiveAlerts] = useState<{ id: number; msg: string; time: string }[]>([])
   const [layers, setLayers] = useState({
     buses: true,
     stops: true,
     maintenance: true,
     traffic: false,
   })
+
   const [zoneModal, setZoneModal] = useState({ open: false, type: 'interest', name: '' })
   const [pendingZone, setPendingZone] = useState<any>(null)
 
@@ -59,53 +58,73 @@ export default function CockpitPage() {
   const mapInstance = useRef<any>(null)
   const polylineInstance = useRef<any>(null)
   const busMarkerInstance = useRef<any>(null)
-  const alertBadgeInstance = useRef<any>(null)
-  const infoWindowInstance = useRef<any>(null)
-
-  const drawingManagerInstance = useRef<any>(null)
   const trafficLayerInstance = useRef<any>(null)
-  const alertMarkersRef = useRef<any[]>([])
+  const drawingManagerInstance = useRef<any>(null)
+
+  const busDivRef = useRef<HTMLElement | null>(null)
+  const polygonsRef = useRef<any[]>([])
   const stopsMarkersRef = useRef<any[]>([])
   const maintenanceMarkersRef = useRef<any[]>([])
-
   const routePathRef = useRef<any[]>([])
-  const [pathLength, setPathLength] = useState(0)
 
+  const [pathLength, setPathLength] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const [playbackProgress, setPlaybackProgress] = useState(0)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
 
   const liveProgressRef = useRef(0)
-  const lastAlertRef = useRef({ deviation: 0, stop: 0 })
+  const lastAlertRef = useRef(0)
   const animationFrameRef = useRef<number | null>(null)
-  const pulsePhaseRef = useRef(0)
 
   const loadGoogleMaps = useCallback(() => {
     return new Promise<void>((resolve) => {
       if (window.google?.maps) return resolve()
       const script = document.createElement('script')
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}&libraries=geometry,drawing`
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}&libraries=geometry,drawing,marker`
       script.async = true
       script.defer = true
       script.onload = () => resolve()
-      script.onerror = () => toast.error('Erro ao carregar Google Maps')
+      script.onerror = () => toast.error('Erro ao carregar Google Maps API')
       document.head.appendChild(script)
     })
   }, [])
 
+  const updateBusMarkerContent = useCallback((isAlert: boolean, speedLabel: string) => {
+    if (!busDivRef.current) {
+      busDivRef.current = document.createElement('div')
+      busDivRef.current.className = 'relative group cursor-pointer'
+    }
+    const colorClass = isAlert
+      ? 'bg-red-600 animate-pulse-alert ring-4 ring-red-500/30'
+      : 'bg-blue-600'
+    busDivRef.current.innerHTML = `
+      <div class="w-6 h-6 ${colorClass} border-2 border-white rounded-full flex items-center justify-center shadow-lg transition-colors">
+         <svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.909.53l1.415 2.83M15 16h1a1 1 0 001-1v-4m-1-4h.01M10 18a2 2 0 100-4 2 2 0 000 4zm6 0a2 2 0 100-4 2 2 0 000 4z"/></svg>
+      </div>
+      <div class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-sm text-white text-xs p-3 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-[100] shadow-xl border border-slate-700">
+        <div class="font-bold text-sm mb-1 text-blue-300">Veículo ABC-1234</div>
+        <div class="text-slate-200">Motorista: João Mendes</div>
+        <div class="text-slate-200">Ocupação: 18/20</div>
+        <div class="mt-2 inline-block px-2 py-1 rounded-md bg-black border border-slate-700 font-mono font-bold">${speedLabel}</div>
+      </div>
+    `
+    return busDivRef.current
+  }, [])
+
+  const createHTMLMarker = useCallback((html: string) => {
+    const div = document.createElement('div')
+    div.innerHTML = html
+    return div
+  }, [])
+
   const initMap = useCallback(() => {
     if (!mapRef.current || mapInstance.current || !window.google) return
-
     mapInstance.current = new window.google.maps.Map(mapRef.current, {
       center: { lat: -23.561414, lng: -46.655881 },
       zoom: 14,
-      mapTypeId: 'roadmap',
+      mapId: '8f4bdbb',
       disableDefaultUI: true,
       zoomControl: true,
-      styles: [
-        { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-        { featureType: 'transit', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-      ],
     })
 
     polylineInstance.current = new window.google.maps.Polyline({
@@ -113,48 +132,16 @@ export default function CockpitPage() {
       path: [],
       strokeColor: '#3b82f6',
       strokeOpacity: 0.8,
-      strokeWeight: 6,
+      strokeWeight: 5,
     })
 
-    busMarkerInstance.current = new window.google.maps.Marker({
+    busMarkerInstance.current = new window.google.maps.marker.AdvancedMarkerElement({
       map: mapInstance.current,
+      content: updateBusMarkerContent(false, '0 km/h'),
       zIndex: 100,
-      icon: {
-        path: window.google.maps.SymbolPath.CIRCLE,
-        scale: 8,
-        fillColor: '#2563eb',
-        fillOpacity: 1,
-        strokeColor: '#ffffff',
-        strokeWeight: 3,
-      },
-      title: 'Veículo Escolar',
     })
-
-    alertBadgeInstance.current = new window.google.maps.Marker({
-      map: null,
-      zIndex: 101,
-      title: 'Alerta Crítico',
-      icon: {
-        path: 'M0,22 L12,1 L24,22 Z',
-        fillColor: '#f59e0b',
-        fillOpacity: 1,
-        strokeWeight: 2,
-        strokeColor: '#fff',
-        scale: 0.8,
-        anchor: new window.google.maps.Point(12, 11),
-      },
-    })
-
-    infoWindowInstance.current = new window.google.maps.InfoWindow({
-      content: `<div style="padding: 4px; font-family: sans-serif;"><h3 style="font-weight: bold; font-size: 14px; margin:0 0 4px 0;">Veículo ABC-1234</h3><p style="font-size: 12px; color: #64748b; margin:0;">Motorista: João Mendes</p><p style="font-size: 12px; color: #64748b; margin:0;">Rota: Rota Norte</p><p style="font-size: 12px; color: #64748b; margin:0;">Alunos: 18/20</p><span style="display:inline-block; margin-top:6px; background:#dbeafe; color:#1e40af; font-size:10px; padding:2px 6px; border-radius:4px; border: 1px solid #bfdbfe;">Em Rota</span></div>`,
-    })
-
-    busMarkerInstance.current.addListener('click', () =>
-      infoWindowInstance.current.open(mapInstance.current, busMarkerInstance.current),
-    )
 
     trafficLayerInstance.current = new window.google.maps.TrafficLayer()
-
     drawingManagerInstance.current = new window.google.maps.drawing.DrawingManager({
       drawingMode: null,
       drawingControl: true,
@@ -162,14 +149,7 @@ export default function CockpitPage() {
         position: window.google.maps.ControlPosition.TOP_CENTER,
         drawingModes: ['polygon'],
       },
-      polygonOptions: {
-        fillColor: '#3b82f6',
-        fillOpacity: 0.3,
-        strokeWeight: 2,
-        clickable: true,
-        editable: false,
-        zIndex: 1,
-      },
+      polygonOptions: { fillColor: '#3b82f6', fillOpacity: 0.3, strokeWeight: 2 },
     })
     drawingManagerInstance.current.setMap(mapInstance.current)
 
@@ -179,100 +159,67 @@ export default function CockpitPage() {
       (e: any) => {
         if (e.type === 'polygon') {
           setPendingZone(e.overlay)
-          setZoneModal((z) => ({ ...z, open: true }))
+          setZoneModal({ open: true, type: 'interest', name: '' })
           drawingManagerInstance.current.setDrawingMode(null)
         }
       },
     )
 
-    const createStatic = (lat: number, lng: number, path: any, color: string, title: string) =>
-      new window.google.maps.Marker({
-        position: { lat, lng },
-        map: null,
-        title,
-        icon: {
-          path,
-          scale: 5,
-          fillColor: color,
-          fillOpacity: 1,
-          strokeWeight: 1,
-          strokeColor: '#fff',
-        },
-      })
+    const stopHtml = `<div class="w-5 h-5 rounded border-2 border-white shadow-lg flex items-center justify-center bg-emerald-500"><div class="w-1.5 h-1.5 bg-white rounded-full"></div></div>`
+    const maintHtml = `<div class="w-6 h-6 bg-amber-500 border-2 border-white rounded-md flex items-center justify-center shadow-lg"><svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg></div>`
 
     stopsMarkersRef.current = [
-      createStatic(
-        -23.565414,
-        -46.654881,
-        window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-        '#10b981',
-        'Parada Norte',
-      ),
-      createStatic(
-        -23.578416,
-        -46.655633,
-        window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-        '#10b981',
-        'Parada Sul',
-      ),
+      new window.google.maps.marker.AdvancedMarkerElement({
+        position: { lat: -23.565414, lng: -46.654881 },
+        content: createHTMLMarker(stopHtml),
+        map: mapInstance.current,
+      }),
+      new window.google.maps.marker.AdvancedMarkerElement({
+        position: { lat: -23.578416, lng: -46.655633 },
+        content: createHTMLMarker(stopHtml),
+        map: mapInstance.current,
+      }),
     ]
     maintenanceMarkersRef.current = [
-      createStatic(
-        -23.581416,
-        -46.651633,
-        window.google.maps.SymbolPath.CIRCLE,
-        '#f59e0b',
-        'Alerta de Manutenção (Oficina)',
-      ),
+      new window.google.maps.marker.AdvancedMarkerElement({
+        position: { lat: -23.581416, lng: -46.651633 },
+        content: createHTMLMarker(maintHtml),
+        map: mapInstance.current,
+      }),
     ]
-  }, [])
+  }, [updateBusMarkerContent, createHTMLMarker])
 
   const fetchDirectionsAndSnap = async (waypoints: { lat: number; lng: number }[]) => {
     if (!window.google) return []
     return new Promise<any[]>((resolve) => {
-      const directionsService = new window.google.maps.DirectionsService()
-      directionsService.route(
+      new window.google.maps.DirectionsService().route(
         {
           origin: waypoints[0],
           destination: waypoints[waypoints.length - 1],
           waypoints: waypoints.slice(1, -1).map((p) => ({ location: p, stopover: true })),
           travelMode: window.google.maps.TravelMode.DRIVING,
         },
-        (result: any, status: string) => {
-          if (status === 'OK' && result) resolve(result.routes[0].overview_path)
+        (res: any, status: string) => {
+          if (status === 'OK' && res) resolve(res.routes[0].overview_path)
           else resolve(waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng)))
         },
       )
     })
   }
 
-  useEffect(() => {
-    loadGoogleMaps().then(() => {
-      initMap()
-      loadRouteData()
-    })
-    return () => {
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
-    }
-  }, [loadGoogleMaps, initMap])
+  const updateBusPosition = useCallback(
+    (index: number, isAlert: boolean = false, speed: string = '45 km/h') => {
+      const path = routePathRef.current
+      if (!path || path.length === 0 || !busMarkerInstance.current) return
+      const safeIndex = Math.min(Math.max(0, Math.floor(index)), path.length - 1)
+      updateBusMarkerContent(isAlert, speed)
+      busMarkerInstance.current.position = path[safeIndex]
+    },
+    [updateBusMarkerContent],
+  )
 
-  useEffect(() => {
-    if (!mapInstance.current) return
-    busMarkerInstance.current?.setMap(layers.buses ? mapInstance.current : null)
-    alertBadgeInstance.current?.setMap(layers.buses ? mapInstance.current : null)
-    trafficLayerInstance.current?.setMap(layers.traffic ? mapInstance.current : null)
-    stopsMarkersRef.current.forEach((m) => m.setMap(layers.stops ? mapInstance.current : null))
-    maintenanceMarkersRef.current.forEach((m) =>
-      m.setMap(layers.maintenance ? mapInstance.current : null),
-    )
-  }, [layers])
-
-  useEffect(() => {
-    if (mapInstance.current) loadRouteData()
-  }, [viewMode, selectedDate])
-
-  const loadRouteData = async () => {
-    const waypoints =
+  const loadRouteData = useCallback(async () => {
+    const wp =
       viewMode === 'live'
         ? [
             { lat: -23.561414, lng: -46.655881 },
@@ -281,13 +228,12 @@ export default function CockpitPage() {
           ]
         : await api.history.getTrajectory(selectedDate, 'v1')
 
-    const path = await fetchDirectionsAndSnap(waypoints)
+    const path = await fetchDirectionsAndSnap(wp)
     routePathRef.current = path
     setPathLength(path.length)
-
     if (polylineInstance.current) polylineInstance.current.setPath(path)
 
-    if (path.length > 0) {
+    if (path.length > 0 && mapInstance.current) {
       const bounds = new window.google.maps.LatLngBounds()
       path.forEach((p: any) => bounds.extend(p))
       mapInstance.current.fitBounds(bounds)
@@ -295,318 +241,270 @@ export default function CockpitPage() {
       if (viewMode === 'live') {
         liveProgressRef.current = 0
         setLiveAlerts([])
-        alertMarkersRef.current.forEach((m) => m.setMap(null))
-        alertMarkersRef.current = []
-        startLiveSimulation()
       } else {
         if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
         setPlaybackProgress(0)
-        updateBusPosition(0)
+        updateBusPosition(0, false, 'Histórico')
       }
     }
-  }
+  }, [viewMode, selectedDate, updateBusPosition])
 
-  const updateBusPosition = (index: number) => {
-    const path = routePathRef.current
-    if (!path || path.length === 0 || !busMarkerInstance.current) return
-    busMarkerInstance.current.setPosition(
-      path[Math.min(Math.max(0, Math.floor(index)), path.length - 1)],
-    )
-  }
-
-  const startLiveSimulation = () => {
+  const startLiveSimulation = useCallback(() => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
     let lastTime = Date.now()
 
     const animate = () => {
+      if (viewMode !== 'live') return
       const path = routePathRef.current
-      if (!path || path.length === 0 || viewMode !== 'live') return
-
-      const now = Date.now()
-      if (now - lastTime > 100) {
-        liveProgressRef.current += 0.5
-        if (liveProgressRef.current >= path.length) liveProgressRef.current = 0
-
-        const pRatio = liveProgressRef.current / path.length
-        const isSpeeding = pRatio > 0.4 && pRatio < 0.45
-        const isDeviating = pRatio > 0.5 && pRatio < 0.55
-        const hasAlert = isSpeeding || isDeviating
-
-        if (hasAlert && now - lastAlertRef.current.deviation > 30000) {
+      if (path && path.length > 0) {
+        const now = Date.now()
+        if (now - lastTime > 100) {
+          liveProgressRef.current = (liveProgressRef.current + 0.5) % path.length
           const pos = path[Math.floor(liveProgressRef.current)]
-          const title = isSpeeding ? 'Excesso de Velocidade Detectado' : 'Desvio de Rota Crítico'
-          if (window.google) {
-            const marker = new window.google.maps.Marker({
-              position: pos,
-              map: mapInstance.current,
-              icon: {
-                path: window.google.maps.SymbolPath.CIRCLE,
-                scale: 5,
-                fillColor: '#ef4444',
-                fillOpacity: 0.5,
-                strokeColor: '#ffffff',
-                strokeWeight: 1,
-              },
-              title,
-            })
-            alertMarkersRef.current.push(marker)
+
+          let inRiskZone = false
+          if (window.google?.maps?.geometry?.poly) {
+            const latLng =
+              typeof pos.lat === 'function' ? pos : new window.google.maps.LatLng(pos.lat, pos.lng)
+            inRiskZone = polygonsRef.current.some(
+              (p) =>
+                p.type === 'risk' &&
+                window.google.maps.geometry.poly.containsLocation(latLng, p.polygon),
+            )
           }
-          setLiveAlerts((la) =>
-            [
-              {
-                id: now,
-                msg: `${title}: Veículo ABC-1234`,
-                time: new Date().toLocaleTimeString(),
-                type: 'alert',
-              },
-              ...la,
-            ].slice(0, 5),
-          )
-          toast.error(`Alerta: ${title}!`)
-          lastAlertRef.current.deviation = now
+
+          const pRatio = liveProgressRef.current / path.length
+          const isSpeeding = pRatio > 0.4 && pRatio < 0.45
+          const hasAlert = isSpeeding || inRiskZone
+          const speed = isSpeeding ? '72 km/h' : '45 km/h'
+
+          if (hasAlert && now - lastAlertRef.current > 10000) {
+            const title = isSpeeding ? 'Excesso de Velocidade' : 'Entrada em Zona de Risco'
+            setLiveAlerts((la) =>
+              [
+                { id: now, msg: `${title} (ABC-1234)`, time: new Date().toLocaleTimeString() },
+                ...la,
+              ].slice(0, 4),
+            )
+            toast.error(`Alerta Crítico: ${title}!`)
+            lastAlertRef.current = now
+          }
+
+          updateBusPosition(liveProgressRef.current, hasAlert, speed)
+          lastTime = now
         }
-
-        pulsePhaseRef.current += 0.3
-        let scale = 8,
-          color = '#2563eb'
-
-        if (isSpeeding) {
-          scale = 8 + Math.sin(pulsePhaseRef.current) * 3
-          color = '#ef4444'
-          alertBadgeInstance.current.setMap(null)
-        } else if (isDeviating) {
-          color = '#f59e0b'
-          const pos = path[Math.floor(liveProgressRef.current)]
-          alertBadgeInstance.current.setPosition({ lat: pos.lat + 0.0003, lng: pos.lng + 0.0003 })
-          if (layers.buses) alertBadgeInstance.current.setMap(mapInstance.current)
-        } else {
-          alertBadgeInstance.current.setMap(null)
-        }
-
-        busMarkerInstance.current.setIcon({
-          path: window.google.maps.SymbolPath.CIRCLE,
-          scale,
-          fillColor: color,
-          fillOpacity: 1,
-          strokeColor: '#ffffff',
-          strokeWeight: 3,
-        })
-        updateBusPosition(liveProgressRef.current)
-        lastTime = now
       }
       animationFrameRef.current = requestAnimationFrame(animate)
     }
     animate()
-  }
+  }, [viewMode, updateBusPosition])
 
   useEffect(() => {
-    if (viewMode === 'live' || !routePathRef.current || routePathRef.current.length === 0) return
-    if (isPlaying) {
-      const interval = setInterval(() => {
-        setPlaybackProgress((prev) => {
-          if (prev >= 100) {
-            setIsPlaying(false)
-            return 100
-          }
-          return prev + 1
-        })
-      }, 100)
-      return () => clearInterval(interval)
+    loadGoogleMaps().then(() => {
+      initMap()
+      loadRouteData().then(() => {
+        if (viewMode === 'live') startLiveSimulation()
+      })
+    })
+    return () => {
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
     }
-  }, [isPlaying, viewMode, pathLength])
+  }, [loadGoogleMaps, initMap, loadRouteData, startLiveSimulation, viewMode])
+
+  useEffect(() => {
+    if (!mapInstance.current) return
+    if (busMarkerInstance.current)
+      busMarkerInstance.current.map = layers.buses ? mapInstance.current : null
+    if (trafficLayerInstance.current)
+      trafficLayerInstance.current.setMap(layers.traffic ? mapInstance.current : null)
+    stopsMarkersRef.current.forEach((m) => {
+      m.map = layers.stops ? mapInstance.current : null
+    })
+    maintenanceMarkersRef.current.forEach((m) => {
+      m.map = layers.maintenance ? mapInstance.current : null
+    })
+  }, [layers])
+
+  useEffect(() => {
+    if (viewMode === 'live' || !isPlaying) return
+    const interval = setInterval(() => {
+      setPlaybackProgress((prev) => {
+        const next = prev + 1
+        if (next >= 100) {
+          setIsPlaying(false)
+          return 100
+        }
+        return next
+      })
+    }, 100)
+    return () => clearInterval(interval)
+  }, [isPlaying, viewMode])
 
   useEffect(() => {
     if (viewMode === 'history' && pathLength > 0)
-      updateBusPosition((playbackProgress / 100) * (pathLength - 1))
-  }, [playbackProgress, viewMode, pathLength])
+      updateBusPosition((playbackProgress / 100) * (pathLength - 1), false, 'Histórico')
+  }, [playbackProgress, viewMode, pathLength, updateBusPosition])
 
   const saveZone = () => {
-    if (!pendingZone || !window.google) return
-    const color = zoneModal.type === 'risk' ? '#ef4444' : '#10b981'
-    pendingZone.setOptions({ fillColor: color, strokeColor: color })
-    const infoWindow = new window.google.maps.InfoWindow({
-      content: `<div style="padding: 4px; font-family: sans-serif;"><strong style="font-size: 14px;">${zoneModal.name || 'Nova Zona'}</strong><br/><span style="font-size: 12px; color: #64748b;">Zona de ${zoneModal.type === 'risk' ? 'Risco' : 'Interesse'}</span></div>`,
+    if (!pendingZone) return
+    const isRisk = zoneModal.type === 'risk'
+    pendingZone.setOptions({
+      fillColor: isRisk ? '#ef4444' : '#10b981',
+      strokeColor: isRisk ? '#ef4444' : '#10b981',
+    })
+    const iw = new window.google.maps.InfoWindow({
+      content: `<div style="padding: 4px; font-family: sans-serif;"><strong style="font-size: 14px;">${zoneModal.name || 'Nova Zona'}</strong><br/><span style="font-size: 12px; color: #64748b;">Zona de ${isRisk ? 'Risco' : 'Interesse'}</span></div>`,
     })
     pendingZone.addListener('click', (e: any) => {
-      infoWindow.setPosition(e.latLng)
-      infoWindow.open(mapInstance.current)
+      iw.setPosition(e.latLng)
+      iw.open(mapInstance.current)
     })
+    polygonsRef.current.push({ polygon: pendingZone, type: zoneModal.type, name: zoneModal.name })
     toast.success(`Zona salva com sucesso!`)
-    setZoneModal({ ...zoneModal, open: false, name: '' })
+    setZoneModal({ open: false, type: 'interest', name: '' })
     setPendingZone(null)
   }
 
   const cancelZone = () => {
     if (pendingZone) pendingZone.setMap(null)
-    setZoneModal({ ...zoneModal, open: false })
+    setZoneModal({ open: false, type: 'interest', name: '' })
     setPendingZone(null)
   }
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col lg:flex-row space-y-4 lg:space-y-0 lg:space-x-4 animate-fade-in">
-      <div className="flex-1 flex flex-col space-y-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Cockpit Operacional</h1>
-            <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <MapPin className="h-4 w-4" /> Monitoramento Avançado com Google Maps
-            </p>
-          </div>
-          <Tabs value={viewMode} onValueChange={setViewMode} className="w-auto">
-            <TabsList>
-              <TabsTrigger value="live" className="flex items-center gap-2">
-                <Activity className="w-4 h-4" /> Tempo Real
-              </TabsTrigger>
-              <TabsTrigger value="history" className="flex items-center gap-2">
-                <History className="w-4 h-4" /> Playback Histórico
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+    <div className="h-[calc(100vh-8rem)] flex flex-col space-y-4 animate-fade-in">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Cockpit Operacional</h1>
+          <p className="text-sm text-muted-foreground flex items-center gap-1">
+            Monitoramento Avançado com Google Maps Platform
+          </p>
         </div>
-
-        <Card className="flex-1 relative overflow-hidden border-2 border-slate-200 shadow-inner rounded-xl">
-          <div ref={mapRef} className="absolute inset-0 w-full h-full bg-slate-100" />
-          {!window.google && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-100/80 backdrop-blur-sm z-10">
-              <div className="flex flex-col items-center text-slate-500">
-                <Activity className="w-8 h-8 animate-spin mb-2" />
-                <p>Inicializando Motor de Mapas...</p>
-              </div>
-            </div>
-          )}
-        </Card>
+        <Tabs value={viewMode} onValueChange={setViewMode}>
+          <TabsList>
+            <TabsTrigger value="live" className="flex items-center gap-2">
+              <Activity className="w-4 h-4" /> Tempo Real
+            </TabsTrigger>
+            <TabsTrigger value="history" className="flex items-center gap-2">
+              <History className="w-4 h-4" /> Playback Histórico
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
-      <div className="w-full lg:w-80 flex flex-col gap-4">
-        <Card className="p-4">
-          <h3 className="font-semibold flex items-center text-slate-800 mb-4">
-            <Layers className="w-4 h-4 mr-2 text-primary" /> Camadas do Mapa
-          </h3>
-          <div className="space-y-3">
-            {[
-              {
-                key: 'buses',
-                label: 'Veículos em Movimento',
-                icon: Activity,
-                color: 'text-blue-500',
-              },
-              { key: 'stops', label: 'Pontos de Parada', icon: MapPin, color: 'text-emerald-500' },
-              {
-                key: 'maintenance',
-                label: 'Alertas de Manutenção',
-                icon: Wrench,
-                color: 'text-amber-500',
-              },
-              {
-                key: 'traffic',
-                label: 'Trânsito em Tempo Real',
-                icon: TrafficCone,
-                color: 'text-orange-500',
-              },
-            ].map((l) => (
-              <div key={l.key} className="flex items-center justify-between">
-                <Label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700">
-                  <l.icon className={`w-4 h-4 ${l.color}`} /> {l.label}
-                </Label>
-                <Switch
-                  checked={(layers as any)[l.key]}
-                  onCheckedChange={(v) => setLayers((prev) => ({ ...prev, [l.key]: v }))}
-                />
+      <div className="flex-1 relative rounded-xl overflow-hidden border-2 shadow-inner bg-slate-100">
+        <div ref={mapRef} className="absolute inset-0" />
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              className="bg-white/95 backdrop-blur shadow-sm absolute top-4 right-14 z-10"
+            >
+              <Layers className="w-4 h-4 mr-2 text-primary" /> Camadas
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-64 p-4 z-50">
+            <h3 className="font-semibold mb-3 text-slate-800">Controles do Mapa</h3>
+            <div className="space-y-3">
+              {[
+                { key: 'buses', label: 'Veículos Ativos', icon: Activity, color: 'text-blue-500' },
+                {
+                  key: 'stops',
+                  label: 'Pontos de Parada',
+                  icon: MapPin,
+                  color: 'text-emerald-500',
+                },
+                {
+                  key: 'maintenance',
+                  label: 'Alertas de Manutenção',
+                  icon: Wrench,
+                  color: 'text-amber-500',
+                },
+                {
+                  key: 'traffic',
+                  label: 'Trânsito em Tempo Real',
+                  icon: TrafficCone,
+                  color: 'text-orange-500',
+                },
+              ].map((l) => (
+                <div key={l.key} className="flex items-center justify-between">
+                  <Label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700">
+                    <l.icon className={`w-4 h-4 ${l.color}`} /> {l.label}
+                  </Label>
+                  <Switch
+                    checked={(layers as any)[l.key]}
+                    onCheckedChange={(v) => setLayers((p) => ({ ...p, [l.key]: v }))}
+                  />
+                </div>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {viewMode === 'live' && liveAlerts.length > 0 && (
+          <div className="absolute top-4 left-4 w-72 max-h-[60%] flex flex-col gap-2 z-10 pointer-events-none">
+            {liveAlerts.map((alert) => (
+              <div
+                key={alert.id}
+                className="pointer-events-auto p-3 rounded-lg border bg-white/95 backdrop-blur shadow-md text-sm animate-slide-down border-red-200"
+              >
+                <div className="flex items-center gap-2 font-semibold text-red-700 mb-1">
+                  <AlertCircle className="w-4 h-4" /> Detecção de Risco
+                  <span className="ml-auto text-xs font-normal text-slate-500">{alert.time}</span>
+                </div>
+                <p className="text-slate-800 font-medium">{alert.msg}</p>
               </div>
             ))}
           </div>
-        </Card>
+        )}
 
-        {viewMode === 'live' ? (
-          <Card className="p-0 flex-1 flex flex-col overflow-hidden">
-            <div className="p-4 border-b bg-slate-50">
-              <h3 className="font-semibold flex items-center text-slate-800">
-                <Activity className="w-4 h-4 mr-2 text-blue-500" /> Feed de Alertas
-              </h3>
-            </div>
-            <div className="flex-1 overflow-auto p-4 space-y-3">
-              {liveAlerts.length === 0 ? (
-                <p className="text-sm text-slate-500 text-center py-10">
-                  Monitorando rotas. Nenhum alerta crítico.
-                </p>
-              ) : (
-                liveAlerts.map((alert) => (
-                  <div
-                    key={alert.id}
-                    className={`p-3 rounded-lg border text-sm animate-slide-down ${alert.type === 'alert' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}
-                  >
-                    <div className="flex items-center gap-2 font-semibold mb-1">
-                      <AlertCircle
-                        className={`w-4 h-4 ${alert.type === 'alert' ? 'text-red-500' : 'text-amber-500'}`}
-                      />
-                      <span className={alert.type === 'alert' ? 'text-red-800' : 'text-amber-800'}>
-                        Alerta do Sistema
-                      </span>
-                      <span className="ml-auto text-xs font-normal text-slate-500">
-                        {alert.time}
-                      </span>
-                    </div>
-                    <p className={alert.type === 'alert' ? 'text-red-700' : 'text-amber-700'}>
-                      {alert.msg}
-                    </p>
-                  </div>
-                ))
-              )}
-            </div>
-          </Card>
-        ) : (
-          <Card className="p-5 flex-1 flex flex-col">
-            <h3 className="font-semibold mb-5 flex items-center text-slate-800">
-              <History className="w-4 h-4 mr-2 text-amber-500" /> Controles de Playback
-            </h3>
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Data da Viagem</label>
-                <input
+        {viewMode === 'history' && (
+          <div className="absolute bottom-6 left-4 right-14 max-w-3xl mx-auto z-10 animate-slide-up">
+            <Card className="p-4 bg-white/95 backdrop-blur shadow-lg border-slate-200 flex items-center gap-4">
+              <div className="flex items-center gap-3 border-r pr-4">
+                <Input
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  className="w-36 h-9"
                 />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Veículo</label>
                 <Select defaultValue="v1">
-                  <SelectTrigger>
+                  <SelectTrigger className="w-36 h-9">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="v1">ABC-1234 (Volksbus)</SelectItem>
+                    <SelectItem value="v1">ABC-1234</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mt-4 space-y-4">
-                <div className="flex justify-between items-center">
-                  <Button variant="outline" size="icon" onClick={() => setIsPlaying(!isPlaying)}>
-                    {isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => setPlaybackProgress(0)}>
-                    <History className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="pt-2">
-                  <Slider
-                    value={[playbackProgress]}
-                    onValueChange={(v) => {
-                      setPlaybackProgress(v[0])
-                      setIsPlaying(false)
-                    }}
-                    max={100}
-                    step={1}
-                  />
-                </div>
-                <div className="flex justify-between text-xs text-slate-500">
-                  <span>Início do dia</span>
-                  <span>Fim do dia</span>
-                </div>
+              <Button
+                variant="outline"
+                size="icon"
+                className="shrink-0"
+                onClick={() => setIsPlaying(!isPlaying)}
+              >
+                {isPlaying ? (
+                  <Pause className="h-4 w-4 text-primary" />
+                ) : (
+                  <Play className="h-4 w-4 text-primary" />
+                )}
+              </Button>
+              <Slider
+                value={[playbackProgress]}
+                onValueChange={(v) => {
+                  setPlaybackProgress(v[0])
+                  setIsPlaying(false)
+                }}
+                max={100}
+                step={1}
+                className="flex-1"
+              />
+              <div className="text-xs font-medium text-slate-500 w-12 text-right">
+                {playbackProgress}%
               </div>
-            </div>
-          </Card>
+            </Card>
+          </div>
         )}
       </div>
 
@@ -618,7 +516,7 @@ export default function CockpitPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Salvar Zona Geográfica</DialogTitle>
+            <DialogTitle>Configurar Zona Geográfica</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
@@ -626,11 +524,11 @@ export default function CockpitPage() {
               <Input
                 value={zoneModal.name}
                 onChange={(e) => setZoneModal((z) => ({ ...z, name: e.target.value }))}
-                placeholder="Ex: Área Escolar 1"
+                placeholder="Ex: Área Escolar Leste"
               />
             </div>
             <div className="space-y-2">
-              <Label>Tipo de Zona</Label>
+              <Label>Classificação e Regras</Label>
               <Select
                 value={zoneModal.type}
                 onValueChange={(v: any) => setZoneModal((z) => ({ ...z, type: v }))}
@@ -639,8 +537,8 @@ export default function CockpitPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="interest">Zona de Interesse (Verde)</SelectItem>
-                  <SelectItem value="risk">Zona de Risco (Vermelho)</SelectItem>
+                  <SelectItem value="interest">Zona de Interesse (Segurança / Verde)</SelectItem>
+                  <SelectItem value="risk">Zona de Risco (Alerta / Vermelho)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -649,7 +547,7 @@ export default function CockpitPage() {
             <Button variant="outline" onClick={cancelZone}>
               Cancelar
             </Button>
-            <Button onClick={saveZone}>Salvar Zona</Button>
+            <Button onClick={saveZone}>Finalizar e Monitorar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -255,11 +255,10 @@ export const api = {
     },
   },
   history: {
-    // Returns waypoints to be snapped to roads by Directions API
     getTrajectory: async (date: string, vehicleId: string) => [
-      { lat: -23.561414, lng: -46.655881 }, // Paulista Ave
-      { lat: -23.573416, lng: -46.653633 }, // Brigadeiro Luis Antonio
-      { lat: -23.587416, lng: -46.657633 }, // Ibirapuera
+      { lat: -23.561414, lng: -46.655881 },
+      { lat: -23.573416, lng: -46.653633 },
+      { lat: -23.587416, lng: -46.657633 },
     ],
   },
   performance: {
