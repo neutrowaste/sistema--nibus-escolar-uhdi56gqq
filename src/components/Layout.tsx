@@ -1,3 +1,4 @@
+import React from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { SidebarProvider, SidebarTrigger, SidebarInset } from '@/components/ui/sidebar'
 import { AppSidebar } from './AppSidebar'
@@ -155,16 +156,16 @@ export default function Layout() {
             <Breadcrumb>
               <BreadcrumbList>
                 {breadcrumbs.map((crumb, idx) => (
-                  <BreadcrumbItem key={crumb.path}>
-                    {idx === breadcrumbs.length - 1 ? (
-                      <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
-                    ) : (
-                      <>
+                  <React.Fragment key={crumb.path}>
+                    <BreadcrumbItem>
+                      {idx === breadcrumbs.length - 1 ? (
+                        <BreadcrumbPage>{crumb.name}</BreadcrumbPage>
+                      ) : (
                         <BreadcrumbLink href={crumb.path}>{crumb.name}</BreadcrumbLink>
-                        <BreadcrumbSeparator />
-                      </>
-                    )}
-                  </BreadcrumbItem>
+                      )}
+                    </BreadcrumbItem>
+                    {idx < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
+                  </React.Fragment>
                 ))}
               </BreadcrumbList>
             </Breadcrumb>

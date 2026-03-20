@@ -41,6 +41,7 @@ import { api } from '@/lib/api'
 declare global {
   interface Window {
     google: any
+    initGoogleMaps?: () => void
   }
 }
 
@@ -82,7 +83,6 @@ export default function CockpitPage() {
   const busMarkerInstance = useRef<any>(null)
   const trafficLayerInstance = useRef<any>(null)
 
-  const busDivRef = useRef<HTMLElement | null>(null)
   const polygonsRef = useRef<any[]>([])
   const stopsMarkersRef = useRef<any[]>([])
   const maintenanceMarkersRef = useRef<any[]>([])
@@ -105,25 +105,27 @@ export default function CockpitPage() {
       let script = document.getElementById(scriptId) as HTMLScriptElement
 
       if (script) {
-        script.addEventListener('load', () => resolve())
-        script.addEventListener('error', () => reject(new Error('Failed to load Google Maps')))
+        if (window.google?.maps) return resolve()
+        const oldCallback = window.initGoogleMaps
+        window.initGoogleMaps = () => {
+          if (oldCallback) oldCallback()
+          resolve()
+        }
         return
       }
 
       const apiKey = getGoogleMapsApiKey()
-      if (!apiKey) {
-        console.warn(
-          'Nenhuma chave do Google Maps foi encontrada nas variáveis de ambiente. Verifique VITE_GOOGLE_MAPS.',
-        )
-      }
+
+      window.initGoogleMaps = () => resolve()
 
       script = document.createElement('script')
       script.id = scriptId
-      // Removed "drawing" library dependency as it is deprecated
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=geometry,marker`
+      const keyParam = apiKey ? `key=${apiKey}&` : ''
+
+      // Loaded async with a callback to prevent warnings and blockages
+      script.src = `https://maps.googleapis.com/maps/api/js?${keyParam}libraries=geometry&loading=async&callback=initGoogleMaps`
       script.async = true
       script.defer = true
-      script.onload = () => resolve()
       script.onerror = () => {
         toast.error('Erro ao carregar Google Maps API. Verifique sua conexão e chave.')
         reject(new Error('Google Maps script error'))
@@ -132,38 +134,11 @@ export default function CockpitPage() {
     })
   }, [])
 
-  const updateBusMarkerContent = useCallback((isAlert: boolean, speedLabel: string) => {
-    if (!busDivRef.current) {
-      busDivRef.current = document.createElement('div')
-      busDivRef.current.className = 'relative group cursor-pointer'
-    }
-    const colorClass = isAlert ? 'bg-red-600 animate-pulse ring-4 ring-red-500/50' : 'bg-blue-600'
-    busDivRef.current.innerHTML = `
-      <div class="w-6 h-6 ${colorClass} border-2 border-white rounded-full flex items-center justify-center shadow-lg transition-colors">
-         <svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.909.53l1.415 2.83M15 16h1a1 1 0 001-1v-4m-1-4h.01M10 18a2 2 0 100-4 2 2 0 000 4zm6 0a2 2 0 100-4 2 2 0 000 4z"/></svg>
-      </div>
-      <div class="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-sm text-white text-xs p-3 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-[100] shadow-xl border border-slate-700">
-        <div class="font-bold text-sm mb-1 text-blue-300">Veículo ABC-1234</div>
-        <div class="text-slate-200">Motorista: João Mendes</div>
-        <div class="text-slate-200">Ocupação: 18/20</div>
-        <div class="mt-2 inline-block px-2 py-1 rounded-md bg-black border border-slate-700 font-mono font-bold">${speedLabel}</div>
-      </div>
-    `
-    return busDivRef.current
-  }, [])
-
-  const createHTMLMarker = useCallback((html: string) => {
-    const div = document.createElement('div')
-    div.innerHTML = html
-    return div
-  }, [])
-
   const initMap = useCallback(() => {
     if (!mapRef.current || mapInstance.current || !window.google?.maps) return
     mapInstance.current = new window.google.maps.Map(mapRef.current, {
       center: { lat: -23.561414, lng: -46.655881 },
       zoom: 14,
-      mapId: 'DEMO_MAP_ID', // Changed from arbitrary map ID to DEMO_MAP_ID to avoid ApiProjectMapError
       disableDefaultUI: true,
       zoomControl: true,
     })
@@ -176,9 +151,8 @@ export default function CockpitPage() {
       strokeWeight: 5,
     })
 
-    busMarkerInstance.current = new window.google.maps.marker.AdvancedMarkerElement({
+    busMarkerInstance.current = new window.google.maps.Marker({
       map: mapInstance.current,
-      content: updateBusMarkerContent(false, '0 km/h'),
       zIndex: 100,
     })
 
@@ -201,29 +175,40 @@ export default function CockpitPage() {
       }
     })
 
-    const stopHtml = `<div class="w-5 h-5 rounded border-2 border-white shadow-lg flex items-center justify-center bg-emerald-500"><div class="w-1.5 h-1.5 bg-white rounded-full"></div></div>`
-    const maintHtml = `<div class="w-6 h-6 bg-amber-500 border-2 border-white rounded-md flex items-center justify-center shadow-lg"><svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg></div>`
+    const stopSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" rx="6" fill="#10b981" stroke="white" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="white"/></svg>`
+    const stopIcon = {
+      url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(stopSvg)}`,
+      scaledSize: new window.google.maps.Size(24, 24),
+      anchor: new window.google.maps.Point(12, 12),
+    }
+
+    const maintSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28"><rect width="28" height="28" rx="6" fill="#f59e0b" stroke="white" stroke-width="2"/><path d="M16 12l-4 4m0-4l4 4" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>`
+    const maintIcon = {
+      url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(maintSvg)}`,
+      scaledSize: new window.google.maps.Size(28, 28),
+      anchor: new window.google.maps.Point(14, 14),
+    }
 
     stopsMarkersRef.current = [
-      new window.google.maps.marker.AdvancedMarkerElement({
+      new window.google.maps.Marker({
         position: { lat: -23.565414, lng: -46.654881 },
-        content: createHTMLMarker(stopHtml),
+        icon: stopIcon,
         map: mapInstance.current,
       }),
-      new window.google.maps.marker.AdvancedMarkerElement({
+      new window.google.maps.Marker({
         position: { lat: -23.578416, lng: -46.655633 },
-        content: createHTMLMarker(stopHtml),
+        icon: stopIcon,
         map: mapInstance.current,
       }),
     ]
     maintenanceMarkersRef.current = [
-      new window.google.maps.marker.AdvancedMarkerElement({
+      new window.google.maps.Marker({
         position: { lat: -23.581416, lng: -46.651633 },
-        content: createHTMLMarker(maintHtml),
+        icon: maintIcon,
         map: mapInstance.current,
       }),
     ]
-  }, [updateBusMarkerContent, createHTMLMarker])
+  }, [])
 
   const startDrawing = () => {
     setIsDrawing(true)
@@ -278,7 +263,6 @@ export default function CockpitPage() {
     try {
       const apiKey = getGoogleMapsApiKey()
       if (!apiKey) {
-        console.warn('API Key ausente para o computeRoutes. Usando fallback.')
         return waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
       }
 
@@ -307,14 +291,9 @@ export default function CockpitPage() {
             data.routes[0].polyline.encodedPath,
           )
         }
-      } else {
-        console.warn(
-          'Routes API computeRoutes falhou. Usando fallback de linhas retas.',
-          await response.text(),
-        )
       }
     } catch (err) {
-      console.error('Erro na chamada da Routes API:', err)
+      console.error('Erro na chamada da Routes API', err)
     }
 
     return waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
@@ -325,10 +304,25 @@ export default function CockpitPage() {
       const path = routePathRef.current
       if (!path || path.length === 0 || !busMarkerInstance.current) return
       const safeIndex = Math.min(Math.max(0, Math.floor(index)), path.length - 1)
-      updateBusMarkerContent(isAlert, speed)
-      busMarkerInstance.current.position = path[safeIndex]
+
+      const color = isAlert ? '#ef4444' : '#2563eb'
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="14" fill="${color}" stroke="white" stroke-width="2" />
+          <rect x="25" y="15" width="50" height="20" fill="black" rx="4" />
+          <text x="50" y="29" font-family="monospace" font-size="12" fill="white" font-weight="bold" text-anchor="middle">${speed}</text>
+          <rect x="35" y="70" width="30" height="16" fill="black" rx="4" />
+          <text x="50" y="82" font-family="sans-serif" font-size="10" fill="white" font-weight="bold" text-anchor="middle">BUS</text>
+        </svg>
+      `
+      busMarkerInstance.current.setIcon({
+        url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`,
+        scaledSize: new window.google.maps.Size(100, 100),
+        anchor: new window.google.maps.Point(50, 50),
+      })
+      busMarkerInstance.current.setPosition(path[safeIndex])
     },
-    [updateBusMarkerContent],
+    [],
   )
 
   const loadRouteData = useCallback(async () => {
@@ -435,14 +429,14 @@ export default function CockpitPage() {
   useEffect(() => {
     if (!mapInstance.current) return
     if (busMarkerInstance.current)
-      busMarkerInstance.current.map = layers.buses ? mapInstance.current : null
+      busMarkerInstance.current.setMap(layers.buses ? mapInstance.current : null)
     if (trafficLayerInstance.current)
       trafficLayerInstance.current.setMap(layers.traffic ? mapInstance.current : null)
     stopsMarkersRef.current.forEach((m) => {
-      m.map = layers.stops ? mapInstance.current : null
+      m.setMap(layers.stops ? mapInstance.current : null)
     })
     maintenanceMarkersRef.current.forEach((m) => {
-      m.map = layers.maintenance ? mapInstance.current : null
+      m.setMap(layers.maintenance ? mapInstance.current : null)
     })
   }, [layers])
 
