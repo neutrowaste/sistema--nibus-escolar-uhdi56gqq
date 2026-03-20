@@ -48,7 +48,7 @@ declare global {
 }
 
 export default function CockpitPage() {
-  const { isLoaded, loadError, apiKey } = useGoogleMaps()
+  const { isLoaded, loadError } = useGoogleMaps()
 
   const [viewMode, setViewMode] = useState('live')
   const [liveAlerts, setLiveAlerts] = useState<{ id: number; msg: string; time: string }[]>([])
@@ -94,7 +94,7 @@ export default function CockpitPage() {
       zoom: 14,
       disableDefaultUI: true,
       zoomControl: true,
-      mapId: 'DEMO_MAP_ID', // Requerido para o uso do AdvancedMarkerElement
+      mapId: 'DEMO_MAP_ID',
     })
 
     polylineInstance.current = new window.google.maps.Polyline({
@@ -102,7 +102,8 @@ export default function CockpitPage() {
       path: [],
       strokeColor: '#3b82f6',
       strokeOpacity: 0.8,
-      strokeWeight: 5,
+      strokeWeight: 6,
+      zIndex: 50, // Ensure route draws above streets
     })
 
     busMarkerInstance.current = new window.google.maps.marker.AdvancedMarkerElement({
@@ -198,59 +199,6 @@ export default function CockpitPage() {
     setZoneModal({ open: true, type: 'interest', name: '' })
   }
 
-  const fetchDirectionsAndSnap = useCallback(
-    async (waypoints: { lat: number; lng: number }[]) => {
-      if (!window.google) return []
-      if (waypoints.length < 2)
-        return waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
-
-      const origin = waypoints[0]
-      const destination = waypoints[waypoints.length - 1]
-      const intermediates = waypoints.slice(1, -1).map((p) => ({
-        location: { latLng: { latitude: p.lat, longitude: p.lng } },
-      }))
-
-      try {
-        if (!apiKey) {
-          console.warn('API Key ausente para o computeRoutes. Usando fallback.')
-          return waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
-        }
-
-        const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': apiKey,
-            'X-Goog-FieldMask': 'routes.polyline.encodedPath',
-          },
-          body: JSON.stringify({
-            origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
-            destination: {
-              location: { latLng: { latitude: destination.lat, longitude: destination.lng } },
-            },
-            intermediates,
-            travelMode: 'DRIVE',
-            routingPreference: 'TRAFFIC_AWARE',
-          }),
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          if (data.routes?.[0]?.polyline?.encodedPath && window.google?.maps?.geometry?.encoding) {
-            return window.google.maps.geometry.encoding.decodePath(
-              data.routes[0].polyline.encodedPath,
-            )
-          }
-        }
-      } catch (err) {
-        console.error('Erro na chamada da Routes API', err)
-      }
-
-      return waypoints.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
-    },
-    [apiKey],
-  )
-
   const updateBusPosition = useCallback(
     (index: number, isAlert: boolean = false, speed: string = '45 km/h') => {
       const path = routePathRef.current
@@ -291,26 +239,69 @@ export default function CockpitPage() {
           ]
         : await api.history.getTrajectory(selectedDate, 'v1')
 
-    const path = await fetchDirectionsAndSnap(wp)
-    routePathRef.current = path
-    setPathLength(path.length)
-    if (polylineInstance.current) polylineInstance.current.setPath(path)
-
-    if (path.length > 0 && mapInstance.current) {
-      const bounds = new window.google.maps.LatLngBounds()
-      path.forEach((p: any) => bounds.extend(p))
-      mapInstance.current.fitBounds(bounds)
-
-      if (viewMode === 'live') {
-        liveProgressRef.current = 0
-        setLiveAlerts([])
-      } else {
-        if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
-        setPlaybackProgress(0)
-        updateBusPosition(0, false, 'Histórico')
-      }
+    if (!window.google?.maps?.DirectionsService || wp.length < 2) {
+      // Fallback straight lines if API is missing
+      const path = wp.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
+      routePathRef.current = path
+      setPathLength(path.length)
+      if (polylineInstance.current) polylineInstance.current.setPath(path)
+      return
     }
-  }, [viewMode, selectedDate, fetchDirectionsAndSnap, updateBusPosition])
+
+    const directionsService = new window.google.maps.DirectionsService()
+    const origin = wp[0]
+    const destination = wp[wp.length - 1]
+    const intermediates = wp.slice(1, -1).map((p) => ({
+      location: { lat: p.lat, lng: p.lng },
+      stopover: false,
+    }))
+
+    directionsService.route(
+      {
+        origin,
+        destination,
+        waypoints: intermediates,
+        travelMode: window.google.maps.TravelMode.DRIVING,
+      },
+      (response: any, status: string) => {
+        let path: any[] = []
+
+        if (status === 'OK' && response && response.routes[0]) {
+          // Extract polyline perfectly snapped to roads
+          response.routes[0].legs.forEach((leg: any) => {
+            leg.steps.forEach((step: any) => {
+              step.path.forEach((p: any) => path.push(p))
+            })
+          })
+        } else {
+          console.warn('DirectionsService request failed:', status, '- Usando fallback.')
+          path = wp.map((w) => new window.google.maps.LatLng(w.lat, w.lng))
+        }
+
+        routePathRef.current = path
+        setPathLength(path.length)
+
+        if (polylineInstance.current) {
+          polylineInstance.current.setPath(path)
+        }
+
+        if (path.length > 0 && mapInstance.current) {
+          const bounds = new window.google.maps.LatLngBounds()
+          path.forEach((p: any) => bounds.extend(p))
+          mapInstance.current.fitBounds(bounds)
+
+          if (viewMode === 'live') {
+            liveProgressRef.current = 0
+            setLiveAlerts([])
+          } else {
+            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+            setPlaybackProgress(0)
+            updateBusPosition(0, false, 'Histórico')
+          }
+        }
+      },
+    )
+  }, [viewMode, selectedDate, updateBusPosition])
 
   const startLiveSimulation = useCallback(() => {
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
